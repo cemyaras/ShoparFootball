@@ -70,6 +70,12 @@ ShoparFootball/
 └── README.md
 ```
 
+## Mobile play
+
+On phones and tablets, the arena fits the available screen height and respects display safe areas. Portrait mode keeps the action buttons and power meter below the pitch; short landscape screens place them alongside it. The camera frames the current opportunity so the players and goal remain readable.
+
+Use one finger to pull back from the ball. Full power needs a short, screen-relative drag. Release, then tap the enlarged contact ball. Rotating the device cancels an unfinished drag safely; start a new drag after the layout settles. No fullscreen permission, orientation lock, or app installation is needed.
+
 ## Development
 
 Edit the source files and reload the browser. No installation or compilation is needed. Keep `index.html` at the root so direct-file use and static hosting continue to work.

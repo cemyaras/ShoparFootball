@@ -37,9 +37,11 @@ A brief pending-result delay leaves goals and saves visible before the result ov
 
 ## Coordinates and timing
 
-Gameplay uses a fixed 1000 × 740 world. The viewport computes a uniform scale and centering offset. Input uses the inverse transform, so mouse and touch positions map to the same world coordinates.
+Gameplay uses a fixed 1000 × 740 world. The desktop viewport fits that world; the compact layout frames the goal and the current scenario's participants with extra room behind the ball for dragging. Camera bounds update at a new highlight or possession and remain stable during a kick. The viewport computes a uniform scale and offset. Input uses the inverse transform, so mouse and touch positions map to the same world coordinates.
 
-Canvas backing dimensions account for device pixel ratio, capped at three. CSS controls the visible dimensions. `ResizeObserver` and window resizing keep both mappings current.
+Canvas backing dimensions account for device pixel ratio, capped at three. CSS controls the visible dimensions using dynamic viewport height and safe-area padding on compact screens. `ResizeObserver`, window resizing, and visual viewport resizing keep both mappings current. A resize cancels an active drag before changing its coordinate transform.
+
+Kick power is normalized against a screen-relative drag distance instead of a fixed world distance. Contact geometry also derives from the visible Canvas dimensions, leaving room for instructions and the timer even on short landscape screens. The renderer and pointer hit detection share this geometry.
 
 The animation loop uses `requestAnimationFrame` and delta time. Frame delta is capped after interruptions; motion updates subdivide time into steps no larger than 1/120 second to support collision checks. Field physics and AI advance during motion and interception, while aiming leaves the user time to plan.
 

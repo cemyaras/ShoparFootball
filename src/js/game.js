@@ -74,20 +74,49 @@
       this.listen($('pass-button'),'click',()=>this.selectMode('PASS'));
       this.listen($('sound-button'),'click',()=>this.audio.toggle());
       this.listen(window,'resize',()=>this.resize());
+      if(window.visualViewport) this.listen(window.visualViewport,'resize',()=>this.resize());
       this.listen(window,'blur',()=>this.cancelPointer(this.pointer?.id));
       this.listen(document,'visibilitychange',()=>{this.lastTime=null;if(document.hidden) this.cancelPointer(this.pointer?.id);});
     }
     destroy(){ this.handlers.forEach(remove=>remove()); this.resizeObserver.disconnect(); cancelAnimationFrame(this.raf); this.audio.context?.close(); }
     resize(){
       const rect=this.canvas.getBoundingClientRect(), dpr=Math.min(window.devicePixelRatio||1,3);
-      this.canvas.width=Math.round(rect.width*dpr); this.canvas.height=Math.round(rect.height*dpr);
-      this.dpr=dpr;
-      const scale=Math.min(rect.width/W,rect.height/H);
-      this.view={width:rect.width,height:rect.height,scale,x:(rect.width-W*scale)/2,y:(rect.height-H*scale)/2};
+      if(!rect.width || !rect.height) return;
+      this.compact=window.matchMedia('(max-width: 1024px), (max-width: 1180px) and (max-height: 600px)').matches;
+      const bounds=this.cameraBounds();
+      const scale=Math.min(rect.width/bounds.width,rect.height/bounds.height);
+      const next={width:rect.width,height:rect.height,scale,x:(rect.width-bounds.width*scale)/2-bounds.left*scale,y:(rect.height-bounds.height*scale)/2-bounds.top*scale};
+      // Repeated visualViewport events need not cancel a gesture if mapping is unchanged.
+      const changed=Math.abs(next.scale-this.view.scale)>.0001 || Math.abs(next.x-this.view.x)>.25 || Math.abs(next.y-this.view.y)>.25;
+      if(changed && this.pointer) this.cancelPointer(this.pointer.id);
+      const width=Math.round(rect.width*dpr),height=Math.round(rect.height*dpr);
+      if(this.canvas.width!==width) this.canvas.width=width;
+      if(this.canvas.height!==height) this.canvas.height=height;
+      this.dpr=dpr;this.view=next;
+      document.body.classList.toggle('contact-tight',this.compact && rect.height<300);
+    }
+    cameraBounds(){
+      if(!this.compact) return {left:0,top:0,width:W,height:H};
+      // Frame the opportunity rather than shrinking the entire pitch onto a phone.
+      // Bounds are stable during play; they update at possession/state changes only.
+      const actors=[this.player,...this.mates,...this.defenders];
+      const xs=actors.map(p=>p.startX),ys=actors.map(p=>p.startY);
+      xs.push(this.controlled.x);ys.push(this.controlled.y);
+      if(this.index===4) xs.push(180,865);
+      const left=Math.max(30,Math.min(370,...xs)-75);
+      const right=Math.min(970,Math.max(630,...xs)+75);
+      const bottom=Math.min(725,Math.max(...ys)+130);
+      return {left,top:10,width:right-left,height:bottom-10};
     }
     toWorld(e){ const r=this.canvas.getBoundingClientRect(),v=this.view; return {x:(e.clientX-r.left-v.x)/v.scale,y:(e.clientY-r.top-v.y)/v.scale}; }
-    maxDrag(){ return clamp(100/this.view.scale,160,280); }
-    contactGeometry(){ return {x:500,y:405,r:clamp(82/this.view.scale,115,215)}; }
+    maxDrag(){ return clamp(Math.min(this.view.width,this.view.height)*.25,68,110)/this.view.scale; }
+    contactGeometry(){
+      const v=this.view,tight=this.compact && v.height<300;
+      const top=this.compact?(tight?48:92):v.height*.29;
+      const bottom=this.compact?v.height-(tight?38:50):v.height*.82;
+      const radius=Math.max(20,Math.min(this.compact?115:140,v.width*.32,(bottom-top)/2));
+      return {x:(v.width/2-v.x)/v.scale,y:((top+bottom)/2-v.y)/v.scale,r:radius/v.scale};
+    }
     makePlayer(x,y,team,number){return {x,y,startX:x,startY:y,tx:x,ty:y,team,number,step:0,celebration:0};}
     loadActors(index){
       const s=SCENARIOS[index];
@@ -104,11 +133,18 @@
     transition(next){
       this.cancelPointer(this.pointer?.id); this.state=next; this.stateTime=0;
       document.body.classList.toggle('is-playing',next!==State.TITLE);
+      document.body.dataset.state=next;
       $('title-overlay').classList.toggle('hidden',next!==State.TITLE);
       $('result-overlay').classList.toggle('hidden',next!==State.RESULT);
       $('summary-overlay').classList.toggle('hidden',next!==State.SESSION_SUMMARY);
       $('contact-heading').classList.toggle('hidden',next!==State.BALL_CONTACT);
       $('contact-footer').classList.toggle('hidden',next!==State.BALL_CONTACT);
+      if(next===State.BALL_CONTACT){
+        this.toastTime=0;$('toast').classList.add('hidden');
+        $('contact-heading').querySelector('p').textContent='Tap the ball to choose your contact.';
+      }
+      // Contact and flight retain the aim camera; a new possession reframes the play.
+      if([State.HIGHLIGHT_INTRO,State.AIMING,State.INTERCEPTION].includes(next)) this.resize();
       this.updateUI();
     }
     startSession(){
@@ -170,7 +206,7 @@
         this.ripples.push({...this.interceptTarget,age:0});this.audio.play('tap');return;
       }
       if(this.state===State.AIMING){
-        if(distance(p,this.ball)>Math.max(72,35/this.view.scale)){this.toast('Start your drag near the glowing ball.',1.8);return;}
+        if(distance(p,this.ball)>Math.max(55,44/this.view.scale)){this.toast('Start your drag near the glowing ball.',1.8);return;}
         e.preventDefault();this.pointer={id:e.pointerId,start:p,last:p};this.aim={dx:0,dy:-1,power:0,distance:0};this.canvas.setPointerCapture(e.pointerId);this.toastTime=0;
       } else if(this.state===State.BALL_CONTACT && !this.contact){
         e.preventDefault();this.pointer={id:e.pointerId,start:p,last:p};this.canvas.setPointerCapture(e.pointerId);
@@ -197,7 +233,7 @@
       } else if(this.state===State.BALL_CONTACT){
         this.releasePointer();const g=this.contactGeometry();
         if(distance(p,g)<=g.r){this.chooseContact((p.x-g.x)/g.r,(p.y-g.y)/g.r,false);}
-        else this.toast('Tap inside the ball to strike it.',1.4);
+        else $('contact-heading').querySelector('p').textContent='Tap inside the ball to strike it.';
       } else {this.releasePointer();this.aim=aim;}
     }
     releasePointer(){const p=this.pointer;this.pointer=null;if(p && this.canvas.hasPointerCapture(p.id)) this.canvas.releasePointerCapture(p.id);}
@@ -439,7 +475,7 @@
         const t=this.interceptSuggested;c.save();c.strokeStyle='#d2f59ac0';c.lineWidth=2;c.setLineDash([6,7]);
         c.beginPath();c.moveTo(this.ball.x,this.ball.y);c.lineTo(850,320);c.stroke();c.setLineDash([]);
         c.beginPath();c.arc(t.x,t.y,29+Math.sin(this.time*4)*4,0,Math.PI*2);c.stroke();c.fillStyle='#d2f59a1c';c.fill();
-        c.fillStyle='#e2f2ce';c.font='bold 12px Arial';c.textAlign='center';c.fillText('MEET THE PASS',t.x,t.y-45);
+        c.fillStyle='#e2f2ce';c.font=`bold ${Math.max(12,11/this.view.scale)}px Arial`;c.textAlign='center';c.fillText('MEET THE PASS',t.x,t.y-45);
         if(this.interceptTarget){c.strokeStyle='#d4f7a177';c.setLineDash([4,5]);c.beginPath();c.moveTo(this.player.x,this.player.y);c.lineTo(this.interceptTarget.x,this.interceptTarget.y);c.stroke();}
         c.restore();
       } else if(this.mode==='PASS' && this.state===State.AIMING){
@@ -447,7 +483,7 @@
           const tx=this.index===2?p.x-22:p.x,ty=this.index===2?p.y-67:p.y-14;
           c.save();c.strokeStyle='#c9f39199';c.lineWidth=2;c.setLineDash([4,6]);c.beginPath();c.arc(tx,ty,29,0,Math.PI*2);c.stroke();c.setLineDash([]);
           if(this.index===2){c.beginPath();c.moveTo(p.x,p.y-22);c.lineTo(tx,ty+18);c.stroke();}
-          c.fillStyle='#ddf4c8';c.font='bold 10px Arial';c.textAlign='center';c.fillText('INTO SPACE',tx,ty-42);c.restore();
+          c.fillStyle='#ddf4c8';c.font=`bold ${Math.max(10,10/this.view.scale)}px Arial`;c.textAlign='center';c.fillText('INTO SPACE',tx,ty-42);c.restore();
         }
       }
     }
@@ -473,7 +509,7 @@
       c.restore();
     }
     drawBall(c,b){
-      const r=clamp(5.7/this.view.scale,8,13),height=b.z*.48;
+      const r=clamp(6/this.view.scale,8,20),height=b.z*.48;
       c.save();c.fillStyle=`rgba(9,30,16,${.36/(1+b.z*.014)})`;c.beginPath();c.ellipse(b.x+3,b.y+4,r*(1+b.z*.005),r*.48,0,0,Math.PI*2);c.fill();
       if(b.z>12){c.strokeStyle='#e7f0c833';c.lineWidth=1;c.setLineDash([3,4]);c.beginPath();c.moveTo(b.x,b.y);c.lineTo(b.x,b.y-height);c.stroke();c.setLineDash([]);}
       c.translate(b.x,b.y-height);c.rotate(b.rotation);
@@ -501,12 +537,12 @@
       // The rubber band points backwards; the dotted line points along the kick.
       const pull=Math.min(a.distance,this.maxDrag());c.strokeStyle='#d6f3a366';c.lineWidth=4;c.beginPath();c.moveTo(this.ball.x,this.ball.y);c.lineTo(this.ball.x-a.dx*pull,this.ball.y-a.dy*pull);c.stroke();
       c.strokeStyle='#d6f3a3cc';c.lineWidth=3;c.beginPath();c.arc(this.ball.x,this.ball.y,25,0,Math.PI*2*a.power);c.stroke();
-      const label=`${Math.round(a.power*100)}%`;c.font='bold 13px Arial';c.textAlign='center';c.fillStyle='#ecf8d9';c.fillText(label,this.ball.x-a.dx*pull,this.ball.y-a.dy*pull+28);c.restore();
+      const label=`${Math.round(a.power*100)}%`;c.font=`bold ${Math.max(13,12/this.view.scale)}px Arial`;c.textAlign='center';c.fillStyle='#ecf8d9';c.fillText(label,this.ball.x-a.dx*pull,this.ball.y-a.dy*pull+28);c.restore();
     }
     drawPossessionHint(c){
       const b=this.ball,pulse=1+Math.sin(this.time*3)*.08;
       c.save();c.strokeStyle='#d9f7a744';c.lineWidth=1.5;c.beginPath();c.arc(b.x,b.y,35*pulse,0,Math.PI*2);c.stroke();
-      c.font='bold 10px Arial';c.textAlign='center';c.fillStyle='#e3f4c9';c.fillText('DRAG BACK TO AIM',b.x,b.y+57);
+      c.font=`bold ${Math.max(10,11/this.view.scale)}px Arial`;c.textAlign='center';c.fillStyle='#e3f4c9';c.fillText('DRAG BACK TO AIM',b.x,b.y+57);
       c.strokeStyle='#d4efad88';c.lineWidth=1.5;c.beginPath();c.moveTo(b.x,b.y+69);c.lineTo(b.x,b.y+86);c.lineTo(b.x-4,b.y+82);c.moveTo(b.x,b.y+86);c.lineTo(b.x+4,b.y+82);c.stroke();c.restore();
     }
     drawContact(c){
@@ -527,7 +563,7 @@
       c.restore();c.strokeStyle='#c6d2bb';c.lineWidth=2;c.beginPath();c.arc(0,0,r,0,Math.PI*2);c.stroke();
       c.strokeStyle='#bdcfb466';c.lineWidth=1;c.setLineDash([4,6]);c.beginPath();c.moveTo(-r*.76,0);c.lineTo(r*.76,0);c.moveTo(0,-r*.76);c.lineTo(0,r*.76);c.stroke();c.setLineDash([]);
       c.font='bold 10px Arial';c.fillStyle='#c8dbb6';c.textAlign='center';
-      if(this.view.scale>.45){c.fillText('CURVE →',-r-63,5);c.fillText('← CURVE',r+63,5);c.fillText('LOFT',0,r+65);}
+      if(!this.compact){c.fillText('CURVE →',-r-63,5);c.fillText('← CURVE',r+63,5);c.fillText('LOFT',0,r+65);}
       if(this.contact){
         const x=this.contact.x*r,y=this.contact.y*r;c.fillStyle='#cbf594aa';c.beginPath();c.arc(x,y,14+this.contact.age*22,0,Math.PI*2);c.fill();c.strokeStyle='#efffd9';c.lineWidth=2;c.beginPath();c.arc(x,y,9,0,Math.PI*2);c.stroke();
       }c.restore();

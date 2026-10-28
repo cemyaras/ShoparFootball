@@ -54,10 +54,12 @@ Use browser device emulation for a quick pass, followed by physical devices when
 
 | Viewport | Purpose |
 | --- | --- |
+| 320 × 480 | Short portrait viewport, including browser chrome |
 | 320 × 568 | Small portrait phone |
 | 375 × 667 | Compact portrait phone |
 | 390 × 844 | Taller portrait phone |
 | 844 × 390 | Phone landscape |
+| 568 × 320 | Short landscape phone |
 | 768 × 1024 | Tablet portrait |
 | 1024 × 768 | Tablet landscape |
 | 1280 × 900 | Desktop |
@@ -66,8 +68,12 @@ Check for horizontal overflow, clipped overlays, and overlapping contact control
 
 Dragging on the pitch should not scroll or zoom the page. Touch targets must work without hover, a keyboard, or multi-touch.
 
+Rotate the device during an unfinished drag and confirm that it cancels without firing. Start a fresh drag after rotation and verify the preview and contact tap still line up. Repeat with the browser toolbar expanded and collapsed. Check that the contact ball stays between its heading and timer and that the session summary and replay button fit in both orientations.
+
 ## Validation history
 
 During initial development, core gameplay and session flow were checked in Chrome with mouse input and emulated mobile touch. Checks covered goals, saves, misses, receiving and returning passes, defender collisions, off-ball receiving, spin and loft, contact timeout, gesture cancellation, restart, and the session summary.
+
+The mobile layout update was additionally checked with emulated touch across 12 portrait and landscape viewports, including 320 × 480 and 568 × 320. Validation covered viewport fit, touch-sized contact geometry, device rotation during a drag, receiving and returning passes, a complete five-highlight session, summary/replay visibility, and the desktop mouse flow.
 
 These checks do not constitute physical-device coverage or validation of every browser. Record the browsers, devices, viewport sizes, and checks used for each subsequent change in its pull request.
