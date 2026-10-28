@@ -1,102 +1,89 @@
 # Shopar Football
 
-Kısa futbol pozisyonlarına odaklanan, HTML5 Canvas tabanlı oynanabilir bir prototip. Oyuncuyu sürekli hareket ettirmek yerine topa yön, güç, falso ve yükseklik vererek pozisyonları tamamlarsınız.
+A gesture-driven football game built around five short highlights. Pull back to aim, choose your contact point, and watch your shot or pass unfold.
 
-Vanilla JavaScript, HTML ve CSS kullanır. Harici kütüphane, oyun motoru, görsel dosyası, backend veya derleme adımı gerektirmez. Oyun arayüzü İngilizcedir.
+Built with HTML5 Canvas, vanilla JavaScript, and CSS. No framework, game engine, backend, external assets, or build step is required.
 
-## Çalıştırma
+## Quick start
 
-`index.html` dosyasını güncel bir tarayıcıda açın. Oyun doğrudan dosyadan çalışır; internet bağlantısı gerekmez.
+Open [`index.html`](index.html) in a modern browser. The game runs directly from disk and works offline.
 
-İsterseniz proje klasöründe Python 3 ile yerel bir sunucu da başlatabilirsiniz:
+For a local HTTP server, run this command from the repository root:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Ardından [localhost:8000](http://localhost:8000) adresini açın. Sunucuyu durdurmak için terminalde `Ctrl+C` kullanın.
+Open [localhost:8000](http://localhost:8000). Stop the server with `Ctrl+C`.
 
-Telefon veya tabletten denemek için cihazı bilgisayarla aynı yerel ağa bağlayın ve tarayıcıda `http://BILGISAYARIN_YEREL_IP_ADRESI:8000` adresini açın. Bilgisayarın güvenlik duvarının bağlantıya izin vermesi gerekebilir.
+To try the game on a phone or tablet, connect it to the same local network as your computer and open `http://YOUR_COMPUTER_LOCAL_IP:8000`. Your computer's firewall may need to allow the connection.
 
-## Kontroller
+## Features
 
-Tüm oyun tek parmakla veya farenin sol tuşuyla oynanır. Klavye gerekmez.
+- Five playable scenarios: one on one, long shot, through ball, two against two, and an off-ball receive.
+- Drag direction and distance control kick direction and power.
+- A second tap sets the contact point, affecting actual curve and loft.
+- Ball physics include height, spin, friction, collisions, saves, and out-of-play detection.
+- Completed passes transfer control to the receiver, who can shoot or return the ball.
+- Goalkeeper, defender, and teammate behavior supports each highlight.
+- Responsive layouts, high-DPI Canvas rendering, and shared Pointer Events input for mouse and touch.
+- Highlight restart, session statistics, performance rating, and optional synthesized audio.
 
-1. **Tap to Play** ile başlayın.
-2. Pozisyon sırasında **SHOOT** veya **PASS** seçin.
-3. Topun yakınından başlayarak geriye sürükleyin. Top, sürüklemenin ters yönüne gider; daha uzun sürükleme daha fazla güç verir.
-4. Bıraktığınızda büyük top üzerinde vuruş noktasını seçin:
-   - **Merkez:** Düz vuruş.
-   - **Sol taraf:** Sağa doğru falso.
-   - **Sağ taraf:** Sola doğru falso.
-   - **Alt taraf:** Daha fazla yükseklik.
-   - **Üst taraf:** Daha alçak vuruş.
-5. Vuruşun sonucunu izleyin ve **Next highlight** ile devam edin.
+## How to play
 
-Vuruş noktasını seçmek için altı saniyeniz vardır. Süre dolarsa daha zayıf ve isabetsiz bir vuruş yapılır. Pası takım arkadaşınız aldığında kontrol ona geçer; şut çekebilir veya tekrar pas verebilirsiniz.
+1. Select **Tap to Play**.
+2. Choose **SHOOT** or **PASS** before aiming.
+3. Drag backward from near the ball. The kick travels opposite your drag; a longer pull adds power.
+4. Release to open the close-up ball, then tap your contact point:
 
-Top karşılama pozisyonunda sahada gitmek istediğiniz noktaya dokunun. Futbolcunuz otomatik hareket eder; top gelmeden doğru konuma ulaşmaya çalışın.
-
-**Restart** mevcut pozisyonu ve o pozisyonda kazanılan istatistikleri sıfırlar. Beş pozisyonun sonunda goller, başarılı paslar, kaçan fırsatlar ve performans puanı gösterilir. **Play Again** yeni bir oturum başlatır. Üstteki ses düğmesiyle oyun seslerini açıp kapatabilirsiniz.
-
-## Pozisyonlar
-
-| Pozisyon | Amaç |
+| Contact point | Effect |
 | --- | --- |
-| One on one | Kaleciyle karşı karşıya kalıp köşeyi bulmak. |
-| From distance | Ceza sahası dışından güçlü ve isabetli bir şut çekmek. |
-| The through ball | Boşluğa pas verip alıcı oyuncuyla hücumu sürdürmek. |
-| Two against two | İki savunmacıya karşı pas veya şut tercih etmek. |
-| Read the game | Gelen pası karşılayıp ardından şut fırsatı yaratmak. |
+| Center | Straight kick |
+| Left side | Rightward curve |
+| Right side | Leftward curve |
+| Below center | More loft |
+| Above center | Lower flight |
 
-Kaleci şutları kurtarabilir, savunmacılar pasları kesebilir ve şutları engelleyebilir. Falso ve yükseklik top fiziğini gerçekten etkiler; şutlar dışarı veya üstten auta gidebilir.
+You have six seconds to choose contact. If the window expires, the game executes a weaker, less accurate kick.
 
-## Dosya yapısı
+For the off-ball highlight, tap a destination on the pitch. Your player moves automatically; reach the incoming pass before it gets away. After a teammate receives a pass, control transfers to that player.
+
+Use **Restart** to retry the current highlight and reset its statistics. After five highlights, review your goals, completed passes, missed chances, and performance score. **Play Again** starts a fresh session. The sound button toggles audio.
+
+## Repository structure
 
 ```text
 ShoparFootball/
-├── index.html     # Sayfa, oyun alanı ve arayüz
-├── style.css      # Masaüstü, telefon ve tablet düzenleri
-├── game.js        # Durum makinesi, giriş, fizik, yapay zekâ ve çizim
-├── .editorconfig  # Ortak metin biçimlendirme ayarları
-├── .gitignore     # Yerel ve geçici dosya istisnaları
+├── index.html              # Browser entry point and game UI
+├── src/
+│   ├── css/
+│   │   └── style.css       # Presentation and responsive layouts
+│   └── js/
+│       └── game.js         # Input, state, physics, AI, audio, and rendering
+├── docs/
+│   ├── ARCHITECTURE.md     # Runtime design and game systems
+│   └── TESTING.md          # Validation commands and manual test scenarios
+├── .editorconfig           # Shared editor conventions
+├── .gitattributes          # Cross-platform line ending rules
+├── .gitignore              # Local files and generated output
+├── CONTRIBUTING.md         # Development workflow and contribution guidelines
 └── README.md
 ```
 
-## Geliştirme
+## Development
 
-Dosyaları düzenleyip tarayıcıyı yenilemeniz yeterlidir. `npm install` veya bir derleme komutu çalıştırmanız gerekmez.
+Edit the source files and reload the browser. No installation or compilation is needed. Keep `index.html` at the root so direct-file use and static hosting continue to work.
 
-`game.js`, oyun mantığı ile çizimi ayrı metotlarda tutar. Dünya koordinatları sabittir; ekran boyutuna göre çizim ve işaretçi koordinatları dönüştürülür. Dokunmatik ve fare girdileri aynı Pointer Events akışını kullanır.
-
-Oyunun durumları:
-
-```text
-TITLE → HIGHLIGHT_INTRO → AIMING → BALL_CONTACT → BALL_IN_MOTION → RESULT
-                         ↑                          │
-                         └──── başarılı pas ────────┘
-
-HIGHLIGHT_INTRO → INTERCEPTION → AIMING veya RESULT
-RESULT → sonraki pozisyon veya SESSION_SUMMARY
-```
-
-## Doğrulama
-
-Projede kalıcı bir otomatik test paketi bulunmaz. Node.js kuruluysa JavaScript sözdizimini kontrol edebilirsiniz:
+If Node.js is available, check JavaScript syntax with:
 
 ```bash
-node --check game.js
+node --check src/js/game.js
 ```
 
-Manuel kontrol için:
+See [Architecture](docs/ARCHITECTURE.md) for the game systems, [Testing](docs/TESTING.md) for the validation checklist, and [Contributing](CONTRIBUTING.md) for the development workflow.
 
-- Fare ve dokunmatik girişle oyunu başlatın, yön ve gücü değiştirerek vuruş yapın.
-- Büyük topun iki yanına ve alt/üst kısmına dokunarak falso ile yüksekliğin değiştiğini gözlemleyin.
-- Kalecinin kurtarış yapabildiğini, köşe şutlarının gol olabildiğini ve hatalı şutların dışarı çıkabildiğini kontrol edin.
-- Takım arkadaşına pas verin; kontrolün alıcıya geçtiğini ve savunmanın pas kesebildiğini kontrol edin.
-- Beşinci pozisyonda gelen pası karşılayın; bir denemede de bilerek kaçırın.
-- Vuruş seçimi süresinin dolmasını ve sürükleme hareketinin iptal edilmesini deneyin.
-- **Restart**, beş pozisyonun tamamı, sonuç ekranı ve **Play Again** akışlarını kontrol edin.
-- Telefon/tablet boyutlarında, dikey ve yatay yönlerde alanı ve kontrolleri kontrol edin.
+## Project status
 
-İlk geliştirme sırasında Chrome üzerinde fare ve emüle edilmiş dokunmatik girişle bu temel akışlar doğrulandı. Fiziksel mobil cihazlarda ayrıca deneme yapılması önerilir.
+This is a playable prototype focused on on-pitch interactions. Session statistics live in memory and reset when the page reloads. There is no career mode, account system, or persistent storage.
+
+The initial gameplay was validated in Chrome using mouse input and emulated mobile touch. Physical-device testing is documented in the [testing guide](docs/TESTING.md).
