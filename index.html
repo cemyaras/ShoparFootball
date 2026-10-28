@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111b22">
+  <meta name="description" content="Five moments. One beautiful game. A gesture-driven football game, playable with one finger or a mouse.">
+  <title>Shopar Football — Play the moment</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="game.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <a class="brand" href="./index.html" aria-label="Shopar Football home"><span class="brand-mark">S<span>↗</span></span><span>SHOPAR<span class="brand-sub">FOOTBALL CLUB</span></span></a>
+      <div class="topbar-center"><span class="live-dot"></span> THE HIGHLIGHT SERIES <span class="edition">/ VOL. 01</span></div>
+      <button class="icon-button" id="sound-button" type="button" aria-label="Enable sound" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path id="sound-waves" d="m16 9 5 6m0-6-5 6"/></svg></button>
+    </header>
+
+    <main>
+      <section class="page-heading" aria-label="Game introduction">
+        <div><div class="eyebrow"><span></span> SMALL MOMENTS. BIG MATCH ENERGY.</div><h1>Play the <em>moment.</em></h1></div>
+        <p>No full matches. No second guesses.<br>Just you, the ball, and a chance to be brilliant.</p>
+      </section>
+
+      <div class="game-layout">
+        <section class="match-card" aria-label="Interactive football pitch">
+          <div class="match-topline"><div class="match-label"><span class="live-dot"></span><span id="match-status">READY WHEN YOU ARE</span></div><div class="scoreboard"><span class="team-blue"></span> SFC <strong id="score">0</strong><span class="score-divider">:</span><strong>0</strong> ROV <span class="team-red"></span></div><button id="restart-button" class="restart" type="button" aria-label="Restart this highlight"><span aria-hidden="true">↻</span> Restart</button></div>
+          <div class="canvas-wrap" id="canvas-wrap">
+            <canvas id="game" aria-label="Football game. Drag back from the ball to aim, release, then tap the close-up ball to strike." tabindex="0"></canvas>
+            <div class="pitch-badge"><span class="live-dot"></span><span id="pitch-label">YOUR NEXT BIG MOMENT</span></div>
+            <div class="overlay title-overlay" id="title-overlay">
+              <div class="title-content"><div class="pill">THE BEAUTIFUL GAME, IN FIVE MOMENTS</div><div class="title-number" aria-hidden="true">90<span>′</span></div><h2>Your moment.<br>Your <em>magic.</em></h2><p>Aim with instinct. Strike with intent.<br>Five chances to make something happen.</p><button class="primary-button" id="play-button" type="button">Tap to Play <span>↗</span></button><div class="input-note"><span>◉</span> ONE FINGER OR A MOUSE. THAT’S ALL.</div></div>
+            </div>
+            <div class="overlay result-overlay hidden" id="result-overlay"><div class="result-content"><div class="eyebrow" id="result-kicker">MOMENT COMPLETE</div><div class="result-symbol" id="result-symbol">↗</div><h2 id="result-title">Beautiful finish.</h2><p id="result-detail"></p><button class="primary-button" id="next-button" type="button">Next highlight <span>→</span></button></div></div>
+            <div class="overlay summary-overlay hidden" id="summary-overlay"><div class="summary-content"><div class="eyebrow">FULL TIME / FIVE MOMENTS PLAYED</div><h2 id="summary-title">Made of moments.</h2><div class="rating"><strong id="rating">0</strong><span>/ 100<br>PERFORMANCE</span></div><div class="summary-stats"><div><strong id="total-goals">0</strong><span>GOALS</span></div><div><strong id="total-passes">0</strong><span>PASSES MADE</span></div><div><strong id="total-misses">0</strong><span>MISSED CHANCES</span></div></div><p id="summary-detail"></p><button class="primary-button" id="again-button" type="button">Play Again <span>↻</span></button></div></div>
+            <div class="contact-heading hidden" id="contact-heading"><span class="eyebrow">THE FINISHING TOUCH</span><h2>Make your mark.</h2><p>Tap the ball to choose your contact.</p></div>
+            <div class="contact-footer hidden" id="contact-footer"><span>LEFT / RIGHT → CURVE</span><span>LOW → LOFT</span><div class="contact-timer"><i id="contact-timer-fill"></i></div></div>
+            <div class="toast hidden" id="toast" role="status"></div>
+          </div>
+          <div class="pitch-bottom"><span><span class="weather-sun">☀</span> PERFECT CONDITIONS</span><span id="bottom-hint">A little instinct goes a long way.</span><span class="pitch-coordinate">SFC / 01</span></div>
+        </section>
+
+        <aside class="control-panel">
+          <div class="chapter-row"><span class="eyebrow">THE OPPORTUNITY</span><span id="chapter-number">01 <span>/ 05</span></span></div>
+          <div class="chapter-progress" id="chapter-progress" aria-label="Highlight progress"><i class="current"></i><i></i><i></i><i></i><i></i></div>
+          <div class="scenario-heading"><span class="scenario-tag" id="scenario-tag">IN THE SPOTLIGHT</span><h2 id="scenario-title">One on one.</h2><p id="scenario-description">Just you and the keeper.<br>Pick your corner. Hold your nerve.</p></div>
+          <div class="action-area"><div class="section-label">MAKE YOUR MOVE <span id="phase-label">01 — AIM</span></div><div class="action-buttons"><button id="shoot-button" class="action-button selected" type="button" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m4 20 14-14M7 5h12v12M4 13l4-4m4 11 4-4"/></svg>SHOOT</button><button id="pass-button" class="action-button" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 12h17m-6-6 6 6-6 6M3 6h5M3 18h5"/></svg>PASS</button></div></div>
+          <div class="power-block"><div class="section-label">KICK POWER <span id="power-value">—</span></div><div class="power-track"><i id="power-fill"></i><span></span><span></span><span></span></div><div class="power-caption"><span>A gentle touch</span><span>A little thunder</span></div></div>
+          <div class="coach-card"><div class="coach-icon" id="coach-icon">↙</div><div><h3 id="coach-title">Pull back. Let fly.</h3><p id="coach-copy">Drag back from the ball to aim. Release, then tap the big ball to add your finishing touch.</p></div></div>
+          <div class="moment-list"><div class="section-label">FIVE CHANCES TO SHINE</div><div id="scenario-list"><div class="moment active"><span>01</span> One on one <i>↗</i></div><div class="moment"><span>02</span> From distance <i>·</i></div><div class="moment"><span>03</span> The through ball <i>·</i></div><div class="moment"><span>04</span> Two against two <i>·</i></div><div class="moment"><span>05</span> Read the game <i>·</i></div></div></div>
+        </aside>
+      </div>
+      <footer class="page-footer"><span>LESS RUNNING. MORE <em>BRILLIANCE.</em></span><span>DRAG TO AIM <b>·</b> TAP TO STRIKE <b>·</b> MAKE IT COUNT <span class="footer-arrow">↗</span></span></footer>
+    </main>
+  </div>
+</body>
+</html>

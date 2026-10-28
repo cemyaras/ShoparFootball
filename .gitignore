@@ -1,0 +1,29 @@
+# İşletim sistemi dosyaları
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Editörlerin yerel dosyaları
+.idea/
+.vscode/*.local.json
+*.swp
+*.swo
+*~
+
+# Yerel ortam değişkenleri; örnek dosyalar takip edilebilir
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Geçici araç, bağımlılık ve doğrulama çıktıları
+node_modules/
+.cache/
+coverage/
+playwright-report/
+test-results/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
