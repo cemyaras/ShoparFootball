@@ -46,9 +46,13 @@ To try the game on a phone or tablet, connect it to the same local network as yo
 
 You have six seconds to choose contact. If the window expires, the game executes a weaker, less accurate kick.
 
+For a chip, tap moderately below center. Combining strong power with contact near the bottom edge adds much more loft and can send the shot over the bar.
+
 For the off-ball highlight, tap a destination on the pitch. Your player moves automatically; reach the incoming pass before it gets away. After a teammate receives a pass, control transfers to that player.
 
 Use **Restart** to retry the current highlight and reset its statistics. After five highlights, review your goals, completed passes, missed chances, and performance score. **Play Again** starts a fresh session. The sound button toggles audio.
+
+During a kick, watch the ball separate from its ground shadow and use the height meter's **BAR** marker to judge its flight. Play slows near the goal. Goals continue into the net, saves end with the keeper holding the ball, and shots over the bar continue behind the goal. A green tick marks a successful crossing; frame hits rebound and are reported separately.
 
 ## Repository structure
 
@@ -63,6 +67,8 @@ ShoparFootball/
 ├── docs/
 │   ├── ARCHITECTURE.md     # Runtime design and game systems
 │   └── TESTING.md          # Validation commands and manual test scenarios
+├── tests/
+│   └── game.test.cjs       # Dependency-free gameplay regression tests
 ├── .editorconfig           # Shared editor conventions
 ├── .gitattributes          # Cross-platform line ending rules
 ├── .gitignore              # Local files and generated output
@@ -74,6 +80,8 @@ ShoparFootball/
 
 On phones and tablets, the arena fits the available screen height and respects display safe areas. Portrait mode keeps the action buttons and power meter below the pitch; short landscape screens place them alongside it. The camera frames the current opportunity so the players and goal remain readable.
 
+On compact screens, action controls step aside while the ball is moving and return when possession is available. The outcome and next-highlight button use the expanded arena.
+
 Use one finger to pull back from the ball. Full power needs a short, screen-relative drag. Release, then tap the enlarged contact ball. Rotating the device cancels an unfinished drag safely; start a new drag after the layout settles. No fullscreen permission, orientation lock, or app installation is needed.
 
 ## Development
@@ -84,6 +92,7 @@ If Node.js is available, check JavaScript syntax with:
 
 ```bash
 node --check src/js/game.js
+node --test tests/game.test.cjs
 ```
 
 See [Architecture](docs/ARCHITECTURE.md) for the game systems, [Testing](docs/TESTING.md) for the validation checklist, and [Contributing](CONTRIBUTING.md) for the development workflow.

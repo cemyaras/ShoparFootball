@@ -5,7 +5,14 @@
 
   const State = Object.freeze({ TITLE: 'TITLE', HIGHLIGHT_INTRO: 'HIGHLIGHT_INTRO', AIMING: 'AIMING', BALL_CONTACT: 'BALL_CONTACT', BALL_IN_MOTION: 'BALL_IN_MOTION', INTERCEPTION: 'INTERCEPTION', RESULT: 'RESULT', SESSION_SUMMARY: 'SESSION_SUMMARY' });
   const W = 1000, H = 740;
-  const FIELD = { left: 76, right: 924, top: 84, bottom: 684, goalLeft: 400, goalRight: 600, crossbar: 44 };
+  const HEIGHT_PROJECTION = .52;
+  const STADIUM_OFFSET = -48;
+  // Projected mouth: 200 × 58.24; standing keeper: 40.7 units tall.
+  // Net depth is separate from upright height; all heights use the ball's projection.
+  const GOAL = Object.freeze({ height: 112, depth: 24, postWidth: 5, keeperScale: 1.1, keeperOffset: 16, keeperReach: 70, keeperReaction: .28 });
+  // Keep player/ball proportions in world space, independent of viewport or DPR.
+  const SPRITES = Object.freeze({ playerHeight: 37, farScale: 1.1, nearScale: 1.6, ballToPlayer: .23, maxAirScale: 1.18, airGrowth: .0018, footOffset: 10 });
+  const FIELD = { left: 76, right: 924, top: 84, bottom: 684, goalLeft: 400, goalRight: 600, crossbar: GOAL.height };
   const CONTACT_TIME = 6;
   const $ = id => document.getElementById(id);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -97,7 +104,7 @@
       document.body.classList.toggle('contact-tight', this.compact && rect.height < 300);
     }
     cameraBounds() {
-      if (!this.compact) return { left: 0, top: 0, width: W, height: H };
+      if (!this.compact) return { left: 0, top: STADIUM_OFFSET, width: W, height: H - STADIUM_OFFSET };
       // Frame the opportunity rather than shrinking the entire pitch onto a phone.
       // Bounds are stable during play; they update at possession/state changes only.
       const actors = [this.player, ...this.mates, ...this.defenders];
@@ -107,7 +114,7 @@
       const left = Math.max(30, Math.min(370, ...xs) - 75);
       const right = Math.min(970, Math.max(630, ...xs) + 75);
       const bottom = Math.min(725, Math.max(...ys) + 130);
-      return { left, top: 10, width: right - left, height: bottom - 10 };
+      return { left, top: STADIUM_OFFSET, width: right - left, height: bottom - STADIUM_OFFSET };
     }
     toWorld(e) { const r = this.canvas.getBoundingClientRect(), v = this.view; return { x: (e.clientX - r.left - v.x) / v.scale, y: (e.clientY - r.top - v.y) / v.scale }; }
     maxDrag() { return clamp(Math.min(this.view.width, this.view.height) * .25, 68, 110) / this.view.scale; }
@@ -139,15 +146,30 @@
       return crowd;
     }
     makePlayer(x, y, team, number) { return { x, y, startX: x, startY: y, tx: x, ty: y, team, number, step: 0, celebration: 0 }; }
+    depthScale(y) {
+      const nearGoal = FIELD.top + GOAL.keeperOffset;
+      return lerp(SPRITES.farScale, SPRITES.nearScale, clamp((y - nearGoal) / (FIELD.bottom - nearGoal), 0, 1));
+    }
+    playerScale(player) { return player.team === 'keeper' ? GOAL.keeperScale : this.depthScale(player.y); }
+    possessionPosition(player) {
+      const offset = SPRITES.footOffset * this.playerScale(player);
+      return { x: player.x + offset, y: player.y + offset };
+    }
+    ballGeometry(ball) {
+      const groundRadius = SPRITES.playerHeight * SPRITES.ballToPlayer * .5 * this.depthScale(ball.y);
+      const airScale = clamp(1 + Math.max(0, ball.z) * SPRITES.airGrowth, 1, SPRITES.maxAirScale);
+      return { groundRadius, radius: groundRadius * airScale, height: ball.z * HEIGHT_PROJECTION };
+    }
     loadActors(index) {
       const s = SCENARIOS[index];
       this.player = this.makePlayer(...s.player, 'blue', 9); this.controlled = this.player;
       this.mates = s.mates.map((p, i) => this.makePlayer(...p, 'blue', 7 + i * 4));
       this.defenders = s.defenders.map((p, i) => this.makePlayer(...p, 'red', 4 + i));
-      this.keeper = { ...this.makePlayer(500, 112, 'keeper', 1), reaction: .25, dive: 0, diveCooldown: 0, targetX: 500 };
-      this.ball = { x: this.player.x, y: this.player.y - 17, z: 0, vx: 0, vy: 0, vz: 0, spin: 0, rotation: 0, age: 0 };
+      this.keeper = { ...this.makePlayer(500, FIELD.top + GOAL.keeperOffset, 'keeper', 1), reaction: GOAL.keeperReaction, dive: 0, diveCooldown: 0, targetX: 500 };
+      this.ball = { ...this.possessionPosition(this.player), z: 0, vx: 0, vy: 0, vz: 0, spin: 0, rotation: 0, age: 0 };
       this.trail = []; this.particles = []; this.ripples = []; this.pointer = null; this.aim = null; this.contact = null; this.kick = null;
       this.pendingResult = null;
+      this.resolution = null; this.flight = null; this.banner = null; this.netWobble = 0;
       this.interceptTarget = null; this.interceptSuggested = { x: 500, y: 320 }; this.passCount = 0; this.motionTime = 0; this.shake = 0;
       this.scenarioSnapshot = { ...this.stats }; this.mode = s.action;
     }
@@ -215,6 +237,7 @@
       }
       [...$('chapter-progress').children].forEach((el, i) => { el.className = i === this.index ? 'current' : i < this.index ? 'done' : ''; });
       [...$('scenario-list').children].forEach((el, i) => { el.className = 'moment' + (i === this.index ? ' active' : '') + (this.outcomes[i] === true ? ' complete' : this.outcomes[i] === false ? ' failed' : ''); el.querySelector('i').textContent = this.outcomes[i] === true ? '✓' : this.outcomes[i] === false ? '×' : i === this.index ? '↗' : '·'; });
+      this.updateFlightUI();
     }
     updatePower(power) { $('power-fill').style.width = `${Math.round(power * 100)}%`; $('power-value').textContent = power ? `${Math.round(power * 100)}%` : '—'; }
     toast(message, seconds = 2.2) { $('toast').textContent = message; $('toast').classList.remove('hidden'); this.toastTime = seconds; }
@@ -253,7 +276,8 @@
         this.aim = null; this.transition(State.BALL_CONTACT); this.audio.play('tap');
       } else if (this.state === State.BALL_CONTACT) {
         this.releasePointer(); const g = this.contactGeometry();
-        if (distance(p, g) <= g.r) { this.chooseContact((p.x - g.x) / g.r, (p.y - g.y) / g.r, false); }
+        const dx = (p.x - g.x) / g.r, dy = (p.y - g.y) / g.r, radius = Math.max(1, Math.hypot(dx, dy));
+        if (distance(p, g) <= g.r + 8 / this.view.scale) { this.chooseContact(dx / radius, dy / radius, false); }
         else $('contact-heading').querySelector('p').textContent = 'Tap inside the ball to strike it.';
       } else { this.releasePointer(); this.aim = aim; }
     }
@@ -269,14 +293,18 @@
       const r = length(contact.x, contact.y), edge = Math.max(0, r - .78), accuracy = contact.timedOut ? .15 : edge * .18;
       const angle = Math.atan2(kick.dy, kick.dx) + (contact.timedOut ? .12 : contact.x * accuracy);
       const speed = (kick.mode === 'SHOOT' ? 220 + kick.power * 530 : 155 + kick.power * 370) * (1 - edge * .2) * (contact.timedOut ? .68 : 1);
-      return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: Math.max(0, (kick.mode === 'SHOOT' ? 62 : 22) + contact.y * (kick.mode === 'SHOOT' ? 245 : 175)), spin: -contact.x * .82 };
+      const loftPower = kick.mode === 'SHOOT' ? .65 + .7 * kick.power : 1;
+      const loft = Math.max(0, (kick.mode === 'SHOOT' ? 62 : 22) + contact.y * (kick.mode === 'SHOOT' ? 245 : 175));
+      return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: loft * loftPower, spin: -contact.x * .82 };
     }
     executeKick() {
       if (!this.kick || !this.contact) return;
       Object.assign(this.ball, this.kickVelocity(this.kick, this.contact), { age: 0, z: 0 });
-      this.ball.x = this.controlled.x; this.ball.y = this.controlled.y - 17;
-      this.motionTime = 0; this.trail = []; this.keeper.reaction = .24; this.keeper.dive = 0; this.keeper.diveCooldown = 0;
+      Object.assign(this.ball, this.possessionPosition(this.controlled));
+      // A short reaction delay keeps corner shots viable from the foot-level origin.
+      this.motionTime = 0; this.trail = []; this.keeper.reaction = GOAL.keeperReaction; this.keeper.dive = 0; this.keeper.diveCooldown = 0;
       this.mode = this.kick.mode; this.kicker = this.controlled; this.audio.play('kick');
+      this.flight = { maxHeight: 0, clearedKeeper: false };
       this.shake = this.mode === 'SHOOT' && this.kick.power > .78 && !this.reducedMotion ? 5 : 0;
       this.transition(State.BALL_IN_MOTION);
     }
@@ -286,19 +314,21 @@
       this.toast('Tap the mint ring to meet the pass.', 2.3);
     }
     receive(player, offBall = false) {
-      this.controlled = player; this.ball.x = player.x; this.ball.y = player.y - 17;
+      this.controlled = player; Object.assign(this.ball, this.possessionPosition(player));
       Object.assign(this.ball, { z: 0, vx: 0, vy: 0, vz: 0, spin: 0 }); this.trail = []; this.aim = null; this.contact = null; this.kick = null;
       if (offBall) this.stats.receives++; else { this.stats.passes++; this.passCount++; }
       this.mode = 'SHOOT'; this.transition(State.AIMING); this.updatePower(0); this.audio.play('tap');
+      this.flight = null; this.updateFlightUI();
       this.toast(offBall ? 'Beautifully read. Now find the finish.' : 'Pass complete. You control the receiver — take your shot!', 2.8);
     }
     finish(kind, detail) {
-      if ([State.RESULT, State.SESSION_SUMMARY].includes(this.state)) return;
+      if (this.pendingResult || [State.RESULT, State.SESSION_SUMMARY].includes(this.state)) return;
       const success = kind === 'goal'; this.outcomes[this.index] = success;
+      this.resolution = { kind, elapsed: 0, netHit: false, crossing: { x: this.ball.x, y: this.ball.y, z: this.ball.z } };
+      const chip = success && this.flight?.clearedKeeper;
       if (success) {
         this.stats.goals++; this.audio.play('goal'); this.celebrate(); this.flash = .2;
-        this.netWobble = 1.0;
-        this.banner = { text: 'GOAL!!', sub: 'WHAT A FINISH!', color: '#ffeb3b', time: 2.5, max: 2.5 };
+        this.banner = { text: 'GOAL!', sub: chip ? 'CHIPPED OVER THE KEEPER' : 'BELOW THE BAR. IN THE NET.', color: '#d0f69a', time: 2.4, max: 2.4 };
       } else {
         this.stats.misses++; if (kind === 'save') this.audio.play('save');
         const bMap = {
@@ -310,24 +340,26 @@
           weak: { text: 'TOO WEAK!', sub: 'MORE POWER NEEDED', color: '#cfd8dc' },
           lost: { text: 'CHANCE GONE!', sub: 'TOO LATE', color: '#cfd8dc' }
         };
+        bMap.bar = { text: 'CROSSBAR!', sub: 'OFF THE FRAME, BACK OUT', color: '#ffb74d' };
+        bMap.post = { text: 'OFF THE POST!', sub: 'THE BALL STAYS OUT', color: '#ffb74d' };
         const b = bMap[kind] || { text: 'CHANCE MISSED!', sub: 'KEEP YOUR HEAD UP', color: '#f48fb1' };
         this.banner = { ...b, time: 2.0, max: 2.0 };
       }
-      const titles = { goal: 'A little bit of magic.', save: 'The keeper had answers.', blocked: 'No way through.', intercepted: 'They read the pass.', wide: 'Just off the mark.', high: 'A little too ambitious.', weak: 'Needed a little more.', lost: 'A moment too late.' };
+      const titles = { goal: chip ? 'GOAL! Over the keeper.' : 'GOAL! Into the net.', save: 'Saved by the keeper.', blocked: 'Blocked by a defender.', intercepted: 'The pass is intercepted.', wide: 'Wide of the goal.', high: 'Over the crossbar.', bar: 'Off the crossbar!', post: 'Off the post!', weak: 'Not enough power.', lost: 'The chance is gone.' };
       $('result-title').textContent = titles[kind] || 'The chance slips away.';
       $('result-symbol').textContent = success ? '↗' : kind === 'save' ? '⊘' : '↘';
       $('result-symbol').style.color = success ? 'var(--mint)' : '#f4ae8f';
       $('result-kicker').textContent = success ? 'GOAL / THAT’S YOUR MOMENT' : kind === 'save' ? 'SAVED / TRY A DIFFERENT CORNER' : 'CHANCE MISSED / KEEP YOUR HEAD UP';
-      $('result-detail').textContent = detail;
+      $('result-detail').textContent = success ? (chip ? 'Your chip cleared the goalkeeper and crossed below the bar.' : 'The ball crossed the goal line between the posts and below the bar.') : detail;
       $('next-button').innerHTML = this.index === 4 ? 'See your performance <span>→</span>' : 'Next highlight <span>→</span>';
       // Leave the action visible before bringing up the result card.
-      this.pendingResult = { kind, wait: success ? 1.45 : 1.05 }; this.aim = null; this.updateUI();
+      this.pendingResult = { kind, wait: success ? 2.1 : kind === 'high' || kind === 'wide' ? 1.6 : 1.35 }; this.aim = null; this.updateUI(); this.updateFlightUI();
     }
     celebrate() {
       const colors = ['#ffeb3b', '#e53935', '#1e88e5', '#ffffff', '#00e676', '#ff9100', '#d500f9'];
       for (let i = 0; i < 85; i++) this.particles.push({
-        x: lerp(350, 650, Math.random()), y: lerp(60, 130, Math.random()),
-        vx: (Math.random() - .5) * 340, vy: -70 - Math.random() * 190,
+        x: i % 2 ? FIELD.goalLeft - 34 : FIELD.goalRight + 34, y: FIELD.top + 60,
+        vx: (i % 2 ? -1 : 1) * (45 + Math.random() * 110), vy: -70 - Math.random() * 190,
         life: 2.0 + Math.random() * 1.2, max: 3.2,
         color: colors[i % colors.length], size: 4 + Math.random() * 4,
         rot: Math.random() * Math.PI * 2, vRot: (Math.random() - .5) * 10
@@ -360,10 +392,8 @@
       this.ripples = this.ripples.filter(p => (p.age += dt) < 1);
       for (const p of [this.player, ...this.mates]) p.celebration = Math.max(0, p.celebration - dt);
       if (this.pendingResult) {
+        this.updateResolution(dt);
         this.pendingResult.wait -= dt;
-        if (this.pendingResult.kind === 'goal') {
-          this.ball.y += this.ball.vy * dt * .2; this.ball.x += this.ball.vx * dt * .2; this.ball.y = Math.max(57, this.ball.y); this.ball.vy *= Math.exp(-dt * 5); this.ball.vx *= Math.exp(-dt * 5);
-        }
         if (this.pendingResult.wait <= 0) { this.pendingResult = null; this.transition(State.RESULT); } return;
       }
       if (this.state === State.HIGHLIGHT_INTRO && this.stateTime > .85) {
@@ -373,13 +403,57 @@
         if (this.contact) { this.contact.age += dt; if (this.contact.age > .23) this.executeKick(); }
         else if (this.stateTime >= CONTACT_TIME) this.chooseContact(.32, .15, true);
       } else if (this.state === State.BALL_IN_MOTION || this.state === State.INTERCEPTION) {
-        this.motionTime += dt;
-        const steps = Math.max(1, Math.ceil(dt / (1 / 120))), step = dt / steps;
+        // Slow the presentation, including AI, around the goal without changing physics.
+        const motionDt = dt * (this.state === State.BALL_IN_MOTION && this.mode === 'SHOOT' ? (this.ball.y < 265 ? .42 : .72) : 1);
+        this.motionTime += motionDt;
+        const steps = Math.max(1, Math.ceil(motionDt / (1 / 120))), step = motionDt / steps;
         for (let i = 0; i < steps && !this.pendingResult; i++) {
           if (![State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.state)) break;
           if (this.state === State.INTERCEPTION) this.updateInterception(step); else this.updateMotion(step);
         }
+        this.updateFlightUI();
       }
+    }
+    updateFlightUI() {
+      const active = this.state === State.BALL_IN_MOTION && !this.resolution;
+      $('flight-meter').classList.toggle('hidden', !active);
+      if (this.resolution) {
+        const messages = { goal: this.flight?.clearedKeeper ? 'GOAL · OVER THE KEEPER, INTO THE NET' : 'GOAL · BELOW THE BAR, INTO THE NET', save: 'SAVED · THE KEEPER HAS IT', high: 'OVER THE BAR · GOAL KICK', wide: 'WIDE · GOAL KICK', bar: 'CROSSBAR · THE BALL COMES BACK OUT', post: 'OFF THE POST · NO GOAL', blocked: 'BLOCKED BY THE DEFENDER', intercepted: 'PASS INTERCEPTED', weak: 'THE BALL RUNS OUT OF PACE', lost: 'CHANCE MISSED' };
+        $('bottom-hint').textContent = messages[this.resolution.kind]; return;
+      }
+      if (!active) return;
+      const b = this.ball, phase = b.z < 5 ? 'GROUND' : b.vz > 8 ? 'RISING' : b.vz < -8 ? 'DROPPING' : 'AT THE TOP';
+      $('flight-height').style.width = `${clamp(b.z / FIELD.crossbar, 0, 1.25) * 80}%`;
+      $('flight-label').textContent = b.z >= FIELD.crossbar ? 'ABOVE BAR' : phase;
+      $('bottom-hint').textContent = `${this.mode === 'PASS' ? 'PASS' : (this.flight?.maxHeight || 0) > 45 || b.vz > 140 ? 'CHIP SHOT' : 'SHOT'} · ${phase}`;
+    }
+    updateResolution(dt) {
+      const b = this.ball, r = this.resolution;
+      r.elapsed += dt;
+      if (r.kind === 'save') {
+        this.trail.forEach(p => p.age += dt);
+        const blend = 1 - Math.exp(-dt * 15);
+        const angle = this.keeper.dive > 0 ? (this.keeper.diveDirection || 1) * -.75 : 0, handY = -10 * GOAL.keeperScale;
+        b.x = lerp(b.x, this.keeper.x - Math.sin(angle) * handY, blend); b.y = lerp(b.y, this.keeper.y + Math.cos(angle) * handY, blend); b.z = lerp(b.z, 0, blend);
+        b.vx = b.vy = b.vz = 0; this.keeper.dive = Math.max(0, this.keeper.dive - dt); return;
+      }
+      const motionDt = dt * (r.kind === 'goal' ? .7 : .45), steps = Math.max(1, Math.ceil(motionDt * 120));
+      for (let i = 0; i < steps; i++) {
+        this.integrateBall(b, motionDt / steps, false);
+        if (r.kind === 'goal') {
+          const back = FIELD.top - GOAL.depth + 3;
+          if (b.y < back) {
+            b.y = back; b.vy = Math.abs(b.vy) * .015; b.vx *= .45;
+            if (!r.netHit) { r.netHit = true; this.netWobble = 1; }
+          }
+          if (b.x < FIELD.goalLeft + 7 || b.x > FIELD.goalRight - 7) { b.x = clamp(b.x, FIELD.goalLeft + 7, FIELD.goalRight - 7); b.vx *= -.2; }
+          if (b.y > FIELD.top - 3) { b.y = FIELD.top - 3; b.vy = -Math.abs(b.vy) * .2; }
+          if (b.z > FIELD.crossbar - 3) { b.z = FIELD.crossbar - 3; b.vz = -Math.abs(b.vz) * .2; }
+          b.vx *= Math.exp(-2 * motionDt / steps); b.vy *= Math.exp(-2 * motionDt / steps);
+        }
+      }
+      this.trail.push({ x: b.x, y: b.y, z: b.z, age: 0 }); if (this.trail.length > 70) this.trail.shift();
+      this.trail.forEach(p => p.age += dt);
     }
     integrateBall(ball, dt, pass = false) {
       const speed = length(ball.vx, ball.vy), spin = ball.spin;
@@ -403,7 +477,7 @@
       const danger = b.y < 255 && b.vy < -50;
       if (danger && !k.diveCooldown && Math.abs(b.x - k.x) > 22) { k.dive = .42; k.diveCooldown = 1.1; k.diveDirection = Math.sign(b.x - k.x); }
       k.dive = Math.max(0, k.dive - dt);
-      this.movePlayer(k, k.targetX, 112, k.dive > 0 ? 185 : 105, dt);
+      this.movePlayer(k, k.targetX, FIELD.top + GOAL.keeperOffset, k.dive > 0 ? 185 : 105, dt);
     }
     updateAI(dt) {
       this.updateKeeper(dt); const b = this.ball;
@@ -429,18 +503,45 @@
         }
       } else for (const p of this.mates) { if (p !== this.controlled) this.movePlayer(p, p.startX, p.startY - 35, 55, dt); }
     }
+    goalLineOutcome(x, z) {
+      // Airborne enlargement is a readability effect, not a larger collision sphere.
+      const radius = this.ballGeometry({ x, y: FIELD.top, z: 0 }).groundRadius;
+      const contactRadius = radius + GOAL.postWidth / 2;
+      const height = z * HEIGHT_PROJECTION, barHeight = FIELD.crossbar * HEIGHT_PROJECTION;
+      // Distance to finite, round-ended frame segments; corners have no box-shaped hit area.
+      const postHeight = clamp(height, 0, barHeight);
+      const leftDistance = Math.hypot(x - FIELD.goalLeft, height - postHeight);
+      const rightDistance = Math.hypot(x - FIELD.goalRight, height - postHeight);
+      if (Math.min(leftDistance, rightDistance) <= contactRadius) return 'post';
+      const barX = clamp(x, FIELD.goalLeft, FIELD.goalRight);
+      if (Math.hypot(x - barX, height - barHeight) <= contactRadius) return 'bar';
+      const inside = x > FIELD.goalLeft + contactRadius && x < FIELD.goalRight - contactRadius;
+      if (inside && height < barHeight - contactRadius) return 'goal';
+      return height > barHeight + contactRadius && x > FIELD.goalLeft && x < FIELD.goalRight ? 'high' : 'wide';
+    }
     updateMotion(dt) {
       this.updateAI(dt); const b = this.ball, previous = { x: b.x, y: b.y, z: b.z }; this.integrateBall(b, dt, this.mode === 'PASS');
+      if (this.flight) {
+        this.flight.maxHeight = Math.max(this.flight.maxHeight, b.z);
+        const plane = this.keeper.y - 7;
+        if (previous.y >= plane && b.y < plane && b.z - this.ballGeometry(b).radius / HEIGHT_PROJECTION > GOAL.keeperReach && Math.abs(b.x - this.keeper.x) < 60) this.flight.clearedKeeper = true;
+      }
       if (b.age > .035) { this.trail.push({ x: b.x, y: b.y, z: b.z, age: 0 }); if (this.trail.length > 70) this.trail.shift(); }
       this.trail.forEach(t => t.age += dt);
       if (previous.y >= FIELD.top && b.y < FIELD.top) {
         const t = (previous.y - FIELD.top) / (previous.y - b.y), x = lerp(previous.x, b.x, t), z = lerp(previous.z, b.z, t);
-        if (x > FIELD.goalLeft + 5 && x < FIELD.goalRight - 5 && z < FIELD.crossbar) { this.finish('goal', this.mode === 'PASS' ? 'Your pass found the net. Sometimes instinct is everything.' : Math.abs(this.contact?.x || 0) > .2 ? 'A touch of curve. A perfectly placed finish.' : 'Picked your spot and made it count. Beautifully done.'); }
-        else this.finish(z >= FIELD.crossbar && x > FIELD.goalLeft && x < FIELD.goalRight ? 'high' : 'wide', z >= FIELD.crossbar ? 'Over the bar. Try a little less loft on the contact.' : 'Wide of the goal. Aim inside the posts and keep the contact clean.');
+        b.x = x; b.y = FIELD.top - .01; b.z = z;
+        const outcome = this.goalLineOutcome(x, z);
+        if (outcome === 'post' || outcome === 'bar') {
+          b.vy = Math.abs(b.vy) * .42; b.vz = -Math.abs(b.vz) * .35;
+          if (outcome === 'post') b.vx = Math.sign(x - 500) * Math.max(80, Math.abs(b.vx));
+          this.audio.play('save'); this.finish(outcome, outcome === 'post' ? 'The ball clipped the upright and rebounded out.' : 'The ball hit the crossbar and came back out. Use a little less loft.');
+        } else if (outcome === 'goal') this.finish('goal');
+        else this.finish(outcome, outcome === 'high' ? 'The ball cleared the crossbar and continued behind the goal.' : 'The ball passed outside the posts. Aim farther inside the goal.');
         return;
       }
       if (b.x < FIELD.left || b.x > FIELD.right || b.y > FIELD.bottom) { this.finish('wide', 'Out of play. A little less power or curve may keep the next one in.'); return; }
-      if (b.age > .12 && b.z < 37) {
+      if (b.age > .12 && b.z - this.ballGeometry(b).radius / HEIGHT_PROJECTION < GOAL.keeperReach) {
         const k = this.keeper, radius = k.dive > 0 ? 32 : 23;
         if (length(b.x - k.x, b.y - (k.y - 7)) < radius) {
           this.ball.vx = 0; this.ball.vy = 0; this.ball.vz = 0; k.dive = .65;
@@ -475,12 +576,20 @@
       c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0); c.fillStyle = '#16331d'; c.fillRect(0, 0, v.width, v.height);
       c.save(); c.translate(v.x, v.y); c.scale(v.scale, v.scale);
       if (this.shake > 0) c.translate(Math.sin(this.time * 86) * this.shake, Math.cos(this.time * 73) * this.shake * .55);
-      this.drawPitch(c); this.drawRunMarkers(c);
+      this.drawPitch(c); this.drawGoalBack(c); this.drawRunMarkers(c);
       if (this.state === State.AIMING && this.aim?.power > .03) this.drawAim(c);
-      this.drawTrail(c);
+      this.drawTrail(c); this.drawBallShadow(c, this.ball);
       const actors = [this.player, ...this.mates, ...this.defenders, this.keeper].sort((a, b) => a.y - b.y);
-      actors.forEach(p => this.drawPlayer(c, p)); this.drawBall(c, this.ball);
+      const aboveGoal = this.ballAboveGoal(), held = this.resolution?.kind === 'save'; let drawn = false;
+      for (const p of actors) {
+        if (!aboveGoal && !held && !drawn && this.ball.z < 35 && this.ball.y <= p.y) { this.drawBall(c, this.ball); drawn = true; }
+        this.drawPlayer(c, p);
+      }
+      if (!aboveGoal && !drawn) this.drawBall(c, this.ball);
+      if (this.resolution?.kind === 'goal') this.drawGoalBack(c, true);
       this.drawGoalFront(c);
+      if (aboveGoal) this.drawBall(c, this.ball);
+      this.drawCrossingMarker(c);
       for (const r of this.ripples) { c.strokeStyle = `rgba(198,255,0,${1 - r.age})`; c.lineWidth = 2; c.beginPath(); c.arc(r.x, r.y, 16 + r.age * 25, 0, Math.PI * 2); c.stroke(); }
       for (const p of this.particles) {
         c.save(); c.globalAlpha = Math.min(1, p.life); c.fillStyle = p.color;
@@ -490,14 +599,27 @@
       }
       if (this.state === State.AIMING && !this.aim) this.drawPossessionHint(c);
       if (this.state === State.BALL_CONTACT) this.drawContact(c);
-      this.drawArcadeBanner(c);
       if (this.flash > 0 && !this.reducedMotion) { c.fillStyle = `rgba(255,255,255,${this.flash * .4})`; c.fillRect(0, 0, W, H); }
       c.restore();
+      this.drawArcadeBanner(c);
+    }
+    ballAboveGoal() {
+      return this.resolution?.kind === 'high' || this.ball.z - this.ballGeometry(this.ball).radius / HEIGHT_PROJECTION > FIELD.crossbar;
+    }
+    drawCrossingMarker(c) {
+      const r = this.resolution;
+      if (!r || !['goal', 'high', 'bar', 'post'].includes(r.kind) || r.elapsed > 1.2) return;
+      const scale = this.view.scale, p = r.crossing, color = r.kind === 'goal' ? '#d0f69a' : r.kind === 'high' ? '#ff8e83' : '#ffca70';
+      c.save(); c.translate(p.x, p.y - p.z * HEIGHT_PROJECTION);
+      c.globalAlpha = clamp(1.4 - r.elapsed, 0, .9); c.strokeStyle = color; c.lineWidth = 2 / scale;
+      c.beginPath(); c.arc(0, 0, (10 + Math.min(r.elapsed, .4) * 12) / scale, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = color; c.font = `bold ${12 / scale}px Arial`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(r.kind === 'goal' ? '✓' : r.kind === 'high' ? '↑' : '×', 0, 0); c.restore();
     }
     drawPitch(c) {
       c.fillStyle = '#142b1a'; c.fillRect(-1000, -1000, 3000, 3000);
 
       // --- Retro Tribün / Taraftarlar (New Star Soccer Crowd) ---
+      c.save(); c.translate(0, STADIUM_OFFSET);
       c.fillStyle = '#1e3324'; c.fillRect(70, 6, 860, 10);
       c.fillStyle = '#27402f'; c.fillRect(70, 16, 860, 10);
       c.fillStyle = '#304e39'; c.fillRect(70, 26, 860, 10);
@@ -535,6 +657,7 @@
       c.fillStyle = '#00bfa5'; c.fillRect(766, 50, 158, 30);
       c.fillStyle = '#004d40'; c.font = '900 10px Impact, sans-serif';
       c.fillText('POWER STRIKE', 845, 69);
+      c.restore();
 
       // Yan panolar
       c.fillStyle = '#263238'; c.fillRect(52, 84, 20, 600); c.fillRect(928, 84, 20, 600);
@@ -563,20 +686,6 @@
       c.beginPath(); c.arc(500, 619, 3.5, 0, Math.PI * 2); c.fill();
       for (const x of [76, 924]) { c.beginPath(); c.arc(x, 84, 15, x === 76 ? 0 : Math.PI / 2, x === 76 ? Math.PI / 2 : Math.PI); c.stroke(); }
 
-      // --- Kale Derinliği ve Ağlar (Net Depth & Physics) ---
-      c.fillStyle = '#183822'; c.fillRect(400, 47, 200, 37);
-      c.strokeStyle = 'rgba(240,245,240,0.82)'; c.lineWidth = 1;
-      const wobble = this.netWobble;
-      for (let x = 400; x <= 600; x += 9) {
-        const shift = wobble > 0 ? Math.sin(this.time * 28 + x * 0.06) * 5 * wobble : 0;
-        c.beginPath(); c.moveTo(x, 47); c.lineTo(x + shift, 84); c.stroke();
-      }
-      for (let y = 47; y < 85; y += 8) {
-        const shiftY = wobble > 0 ? Math.sin(this.time * 25 + y * 0.1) * 3 * wobble : 0;
-        c.beginPath(); c.moveTo(400, y + shiftY); c.lineTo(600, y + shiftY); c.stroke();
-      }
-      c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.strokeRect(400, 47, 200, 37);
-
       // Köşe bayrakları (rüzgarda hafif sallanan üçgen bayrak)
       const flagWave = Math.sin(this.time * 6) * 3;
       for (const x of [76, 924]) {
@@ -585,14 +694,52 @@
         c.moveTo(x, 60); c.lineTo(x + (x === 76 ? 13 : -13) + flagWave, 65); c.lineTo(x, 71); c.fill();
       }
     }
+    goalGeometry() {
+      const top = FIELD.top - FIELD.crossbar * HEIGHT_PROJECTION;
+      return { left: FIELD.goalLeft, right: FIELD.goalRight, bottom: FIELD.top, top, backTop: top - GOAL.depth, backBottom: FIELD.top - GOAL.depth, inset: 8 };
+    }
+    drawGoalBack(c, roofOnly = false) {
+      const g = this.goalGeometry(), leftBack = g.left + g.inset, rightBack = g.right - g.inset;
+      const frontTL = [g.left, g.top], frontTR = [g.right, g.top];
+      const frontBL = [g.left, g.bottom], frontBR = [g.right, g.bottom];
+      const backTL = [leftBack, g.backTop], backTR = [rightBack, g.backTop];
+      const backBL = [leftBack, g.backBottom], backBR = [rightBack, g.backBottom];
+      const panel = (points, columns, rows, fill) => {
+        c.save(); c.beginPath(); points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
+        c.fillStyle = fill; c.fill(); c.clip(); c.strokeStyle = 'rgba(235,247,235,.48)'; c.lineWidth = .85;
+        const between = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t)];
+        const strand = (a, b, phase) => {
+          const wave = Math.sin(this.time * 28 + phase) * this.netWobble * 4;
+          c.beginPath(); c.moveTo(...a); c.quadraticCurveTo((a[0] + b[0]) / 2 + wave, (a[1] + b[1]) / 2 + wave * .5, ...b); c.stroke();
+        };
+        for (let i = 0; i <= columns; i++) strand(between(points[0], points[1], i / columns), between(points[3], points[2], i / columns), i);
+        for (let i = 0; i <= rows; i++) strand(between(points[0], points[3], i / rows), between(points[1], points[2], i / rows), i + .7);
+        c.restore();
+      };
+      if (roofOnly) {
+        panel([backTL, backTR, frontTR, frontTL], 22, 3, 'rgba(230,246,232,.08)'); return;
+      }
+      c.save();
+      c.fillStyle = 'rgba(8,27,14,.28)'; c.beginPath(); c.moveTo(...backBL); c.lineTo(...backBR); c.lineTo(...frontBR); c.lineTo(...frontBL); c.closePath(); c.fill();
+      panel([backTL, backTR, backBR, backBL], 22, 7, 'rgba(220,243,224,.06)');
+      panel([backTL, backTR, frontTR, frontTL], 22, 3, 'rgba(230,246,232,.08)');
+      panel([backTL, frontTL, frontBL, backBL], 3, 7, 'rgba(225,245,228,.05)');
+      panel([frontTR, backTR, backBR, frontBR], 3, 7, 'rgba(225,245,228,.05)');
+      c.strokeStyle = '#b8cec0'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(...frontTL); c.lineTo(...backTL); c.lineTo(...backTR); c.lineTo(...frontTR);
+      c.moveTo(...backTL); c.lineTo(...backBL); c.lineTo(...frontBL); c.moveTo(...backTR); c.lineTo(...backBR); c.lineTo(...frontBR); c.stroke();
+      c.restore();
+    }
     drawGoalFront(c) {
-      // 3D parlak beyaz direkler
-      c.strokeStyle = '#ffffff'; c.lineWidth = 5; c.lineCap = 'round';
-      c.beginPath(); c.moveTo(400, 84); c.lineTo(400, 47); c.lineTo(600, 47); c.lineTo(600, 84); c.stroke();
-      // Direk iç gölgesi
-      c.strokeStyle = '#90a4ae'; c.lineWidth = 1.5; c.lineCap = 'butt';
-      c.beginPath(); c.moveTo(401, 84); c.lineTo(401, 48); c.lineTo(599, 48); c.lineTo(599, 84); c.stroke();
-      c.strokeStyle = '#ffffff'; c.lineWidth = 2; c.beginPath(); c.moveTo(400, 84); c.lineTo(600, 84); c.stroke();
+      const g = this.goalGeometry();
+      c.save(); c.lineCap = 'round';
+      c.strokeStyle = '#6e8877'; c.lineWidth = GOAL.postWidth + 2;
+      c.beginPath(); c.moveTo(g.left + 1, g.bottom + 1); c.lineTo(g.left + 1, g.top + 1); c.lineTo(g.right + 1, g.top + 1); c.lineTo(g.right + 1, g.bottom + 1); c.stroke();
+      c.strokeStyle = '#ffffff'; c.lineWidth = GOAL.postWidth;
+      c.beginPath(); c.moveTo(g.left, g.bottom); c.lineTo(g.left, g.top); c.lineTo(g.right, g.top); c.lineTo(g.right, g.bottom); c.stroke();
+      c.strokeStyle = '#e0ede1'; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(g.left - 1, g.bottom); c.lineTo(g.left - 1, g.top - 1); c.lineTo(g.right, g.top - 1); c.stroke();
+      c.restore();
     }
     drawRunMarkers(c) {
       if ([State.TITLE, State.BALL_CONTACT, State.RESULT, State.SESSION_SUMMARY].includes(this.state)) return;
@@ -622,6 +769,8 @@
 
       c.save();
       c.translate(p.x, p.y + hop);
+      const scale = this.playerScale(p);
+      c.scale(scale, scale);
 
       // 1. Zemin Gölgelendirmesi
       c.fillStyle = 'rgba(10,32,18,0.45)';
@@ -696,6 +845,16 @@
         c.fillRect(-12, -18, 4, 10); c.fillRect(8, -18, 4, 10);
         c.fillStyle = '#ffffff'; // Kaleci beyaz eldivenleri
         c.fillRect(-13, -22, 5, 5); c.fillRect(8, -22, 5, 5);
+      } else if (p.team === 'keeper' && this.resolution?.kind === 'save') {
+        c.fillStyle = shirtMain; c.fillRect(-11, -13, 7, 5); c.fillRect(4, -13, 7, 5);
+        c.fillStyle = '#ffffff'; c.fillRect(-6, -12, 5, 5); c.fillRect(1, -12, 5, 5);
+      } else if (p.team === 'keeper') {
+        // A wider ready stance makes the keeper's coverage readable in the goalmouth.
+        c.fillStyle = shirtMain;
+        c.fillRect(-14, -14, 6, 4); c.fillRect(8, -14, 6, 4);
+        c.fillRect(-17, -18, 4, 7); c.fillRect(13, -18, 4, 7);
+        c.fillStyle = '#ffffff';
+        c.fillRect(-18, -22, 5, 5); c.fillRect(13, -22, 5, 5);
       } else {
         const armL = moving ? -stride * 0.8 : 0;
         const armR = moving ? stride * 0.8 : 0;
@@ -725,16 +884,15 @@
 
       c.restore();
     }
-    drawBall(c, b) {
-      const baseR = clamp(6 / this.view.scale, 8, 18);
-      const visualR = baseR * (1 + b.z * 0.0055); // 3D büyüme hissi!
-      const height = b.z * 0.52;
-
+    drawBallShadow(c, b) {
+      if (this.resolution?.kind === 'save') return;
+      const geometry = this.ballGeometry(b);
+      const baseR = geometry.groundRadius, height = geometry.height;
       c.save();
 
       // 1. Yerdeki gölge (NSS tarzı yükseldikçe küçülen ve solan gölge)
       const shadowScale = Math.max(0.32, 1 - b.z * 0.0035);
-      const shadowAlpha = Math.max(0.12, 0.44 / (1 + b.z * 0.014));
+      const shadowAlpha = Math.max(0.24, 0.5 / (1 + b.z * 0.008));
       c.fillStyle = `rgba(10,32,16,${shadowAlpha})`;
       c.beginPath();
       c.ellipse(b.x + 2, b.y + 4, baseR * 1.15 * shadowScale, baseR * 0.5 * shadowScale, 0, 0, Math.PI * 2);
@@ -742,10 +900,18 @@
 
       // Havalandığında yükseklik kılavuz çizgisi
       if (b.z > 8) {
-        c.strokeStyle = 'rgba(255,255,255,0.38)'; c.lineWidth = 1.2; c.setLineDash([2, 3]);
+        c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = Math.max(1.1, .8 / this.view.scale); c.setLineDash([3, 5]);
         c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(b.x, b.y - height); c.stroke(); c.setLineDash([]);
       }
-
+      c.restore();
+    }
+    drawBall(c, b) {
+      const geometry = this.ballGeometry(b), visualR = geometry.radius, height = geometry.height;
+      c.save();
+      if ([State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.state)) {
+        c.strokeStyle = 'rgba(255,255,255,.45)'; c.lineWidth = 1 / this.view.scale;
+        c.beginPath(); c.arc(b.x, b.y - height, visualR + 2 / this.view.scale, 0, Math.PI * 2); c.stroke();
+      }
       // 2. Topun Kendisi (Telstar Klasik 32 Panel)
       c.translate(b.x, b.y - height);
       c.rotate(b.rotation);
@@ -753,7 +919,7 @@
       const sphereGrad = c.createRadialGradient(-visualR * 0.3, -visualR * 0.3, visualR * 0.05, 0, 0, visualR);
       sphereGrad.addColorStop(0, '#ffffff'); sphereGrad.addColorStop(0.7, '#f5f5f5'); sphereGrad.addColorStop(1, '#bdbdbd');
       c.fillStyle = sphereGrad; c.beginPath(); c.arc(0, 0, visualR, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#37474f'; c.lineWidth = 1; c.stroke();
+      c.strokeStyle = '#37474f'; c.lineWidth = .65; c.stroke();
 
       // Siyah deri beşgen paneller
       c.fillStyle = '#212121';
@@ -763,7 +929,7 @@
         c.beginPath();
         c.arc(Math.cos(angle) * visualR * 0.88, Math.sin(angle) * visualR * 0.88, visualR * 0.22, 0, Math.PI * 2);
         c.fill();
-        c.strokeStyle = '#757575'; c.lineWidth = 0.8;
+        c.strokeStyle = '#757575'; c.lineWidth = 0.45;
         c.beginPath();
         c.moveTo(Math.cos(angle) * visualR * 0.35, Math.sin(angle) * visualR * 0.35);
         c.lineTo(Math.cos(angle) * visualR * 0.72, Math.sin(angle) * visualR * 0.72);
@@ -778,9 +944,10 @@
       c.save(); c.lineCap = 'round';
       for (let i = 1; i < this.trail.length; i++) {
         const a = this.trail[i - 1], b = this.trail[i], alpha = (i / this.trail.length) * .4 * Math.max(0, 1 - b.age / 1.4);
-        c.strokeStyle = this.mode === 'PASS' ? `rgba(100,221,255,${alpha})` : `rgba(255,235,59,${alpha})`;
-        c.lineWidth = 2 + i / this.trail.length * 5;
-        c.beginPath(); c.moveTo(a.x, a.y - a.z * .52); c.lineTo(b.x, b.y - b.z * .52); c.stroke();
+        c.strokeStyle = this.mode === 'PASS' ? `rgba(180,238,255,${alpha * 1.6})` : `rgba(255,255,235,${alpha * 1.8})`;
+        // A trail must not be wider than the small on-field ball it follows.
+        c.lineWidth = this.ballGeometry(b).groundRadius * (.18 + i / this.trail.length * .55);
+        c.beginPath(); c.moveTo(a.x, a.y - a.z * HEIGHT_PROJECTION); c.lineTo(b.x, b.y - b.z * HEIGHT_PROJECTION); c.stroke();
       } c.restore();
     }
     drawAim(c) {
@@ -910,7 +1077,7 @@
       for (let i = 0; i < 28; i++) {
         this.integrateBall(preview, .034, this.mode === 'PASS');
         if (i > 4) {
-          c.lineTo(preview.x, preview.y - preview.z * .52);
+          c.lineTo(preview.x, preview.y - preview.z * HEIGHT_PROJECTION);
         }
         if (preview.y < 84 || preview.x < 76 || preview.x > 924) break;
       }
@@ -1024,17 +1191,18 @@
 
       c.save();
       c.globalAlpha = alpha;
-      c.translate(500, 240);
+      const width = Math.min(420, this.view.width - 24), half = width / 2;
+      c.translate(this.view.width / 2, Math.max(50, this.view.height - 57));
       c.scale(scale, scale);
 
       // Banner Arka Planı (Retro Arcade Şerit)
       c.fillStyle = 'rgba(12,18,24,0.92)';
-      c.fillRect(-240, -42, 480, 84);
+      c.fillRect(-half, -37, width, 74);
       c.fillStyle = b.color;
-      c.fillRect(-240, -42, 480, 4); c.fillRect(-240, 38, 480, 4);
+      c.fillRect(-half, -37, width, 3); c.fillRect(-half, 34, width, 3);
 
       // Ana Yazı ("GOAL!!", "SAVED!", vb.)
-      c.font = '900 38px Impact, Arial Black, sans-serif';
+      c.font = `900 ${clamp(width * .085, 24, 34)}px Impact, Arial Black, sans-serif`;
       c.textAlign = 'center';
       c.fillStyle = '#000000';
       c.fillText(b.text, 3, 4);
@@ -1042,10 +1210,10 @@
       c.fillText(b.text, 0, 0);
 
       // Alt Başlık ("WHAT A FINISH!", "KEEPER DENIES!", vb.)
-      c.font = 'bold 13px sans-serif';
-      c.letterSpacing = '3px';
+      c.font = `bold ${width < 300 ? 9 : 11}px Arial, sans-serif`;
+      c.letterSpacing = '.7px';
       c.fillStyle = '#ffffff';
-      c.fillText(b.sub, 0, 25);
+      c.fillText(b.sub, 0, 23);
 
       c.restore();
     }
