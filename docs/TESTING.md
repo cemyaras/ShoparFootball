@@ -11,6 +11,8 @@ node --check src/js/game.js
 git diff --check
 ```
 
+The GitHub Pages workflow runs the JavaScript syntax check before building and deploying. Parse errors, including duplicate declarations, must be fixed before a version can be published.
+
 Open `index.html` directly and confirm that the stylesheet and game script load without console errors. Also test through a local server when checking mobile devices:
 
 ```bash

@@ -784,14 +784,6 @@
       } c.restore();
     }
     drawAim(c) {
-      const a = this.aim, preview = { ...this.ball, ...this.kickVelocity({ dx: a.dx, dy: a.dy, power: Math.max(.16, a.power), mode: this.mode }, { x: 0, y: 0, timedOut: false }) };
-      c.save(); c.strokeStyle = '#ffff00'; c.lineWidth = 2.5; c.setLineDash([5, 6]); c.beginPath(); c.moveTo(preview.x, preview.y);
-      let end = preview;
-      for (let i = 0; i < 38; i++) { this.integrateBall(preview, .034, this.mode === 'PASS'); c.lineTo(preview.x, preview.y - preview.z * .52); end = { ...preview }; if (preview.y < 84 || preview.x < 76 || preview.x > 924) break; }
-      c.stroke(); c.setLineDash([]); c.fillStyle = '#ffea00'; this.polygon(c, end.x, end.y - end.z * .52, 7, 3, Math.atan2(end.vy, end.vx)); c.fill();
-      const pull = Math.min(a.distance, this.maxDrag()); c.strokeStyle = '#ffeb3b88'; c.lineWidth = 4; c.beginPath(); c.moveTo(this.ball.x, this.ball.y); c.lineTo(this.ball.x - a.dx * pull, this.ball.y - a.dy * pull); c.stroke();
-      c.strokeStyle = '#ffeb3b'; c.lineWidth = 3; c.beginPath(); c.arc(this.ball.x, this.ball.y, 25, 0, Math.PI * 2 * a.power); c.stroke();
-      const label = `${Math.round(a.power * 100)}%`; c.font = `900 ${Math.max(13, 12 / this.view.scale)}px Impact, sans-serif`; c.textAlign = 'center'; c.fillStyle = '#ffea00'; c.fillText(label, this.ball.x - a.dx * pull, this.ball.y - a.dy * pull + 28); c.restore();
       const a = this.aim;
       if (!a || a.power < .02) return;
 
