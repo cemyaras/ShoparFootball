@@ -265,7 +265,7 @@
       $('chapter-number').textContent = `${this.index + 1}/${SCENARIOS.length}`;
       $('restart-button').disabled = [State.TITLE, State.SESSION_SUMMARY].includes(this.state);
       $('help-button').classList.toggle('hidden', Boolean(this.defense?.finished));
-      this.canvas.setAttribute('aria-label', this.defense ? 'Win the Ball. Draw a running path from your blue player, release to run, then tap when the nearby tackle ring turns green.' : 'Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike.');
+      this.canvas.setAttribute('aria-label', this.defense ? 'Win the Ball. Hold anywhere on the pitch to chase. Release when the ring around the ball turns green to tackle.' : 'Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike.');
       $('bottom-hint').textContent = this.state === State.INTERCEPTION ? 'Tap the ring to receive.' : this.state === State.AIMING ? 'Drag back to aim. Release, then tap the ball.' : this.state === State.BALL_CONTACT ? 'Tap a point on the ball.' : '';
       [...$('chapter-progress').children].forEach((el, i) => { el.className = i === this.index ? 'current' : this.outcomes[i] === true ? 'done' : this.outcomes[i] === false ? 'failed' : ''; });
       this.updateFlightUI();
@@ -278,9 +278,8 @@
       if (this.state === State.TITLE) { this.startSession(); return; }
       if (this.state === State.DEFENDING && !this.defense.finished) {
         e.preventDefault();
-        if (this.defense.phase === 'running') { this.defense.attemptTackle(); return; }
-        if (distance(p, this.player) > Math.max(55, 44 / this.view.scale)) { this.toast('Draw from your blue player', 1.2); return; }
-        this.pointer = { id: e.pointerId, start: p, last: p }; this.canvas.setPointerCapture(e.pointerId); this.defense.beginRoute(); this.toastTime = 0; return;
+        this.pointer = { id: e.pointerId, start: p, last: p }; this.canvas.setPointerCapture(e.pointerId);
+        this.defense.beginHold(); this.toastTime = 0; return;
       }
       if (this.state === State.INTERCEPTION) {
         e.preventDefault(); this.interceptTarget = { x: clamp(p.x, FIELD.left + 12, FIELD.right - 12), y: clamp(p.y, FIELD.top + 25, FIELD.bottom - 20) };
@@ -296,7 +295,7 @@
     onPointerMove(e) {
       if (!this.pointer || e.pointerId !== this.pointer.id) return;
       e.preventDefault(); this.pointer.last = this.toWorld(e);
-      if (this.state === State.DEFENDING) { this.defense.extendRoute(this.pointer.last); return; }
+      if (this.state === State.DEFENDING) return;
       if (this.state === State.AIMING) {
         const dx = this.pointer.start.x - this.pointer.last.x, dy = this.pointer.start.y - this.pointer.last.y, d = length(dx, dy);
         this.aim = { dx: d > 0 ? dx / d : 0, dy: d > 0 ? dy / d : -1, power: clamp(d / this.maxDrag(), 0, 1), distance: d }; this.updatePower(this.aim.power);
@@ -306,8 +305,7 @@
       if (!this.pointer || e.pointerId !== this.pointer.id) return;
       e.preventDefault(); const p = this.toWorld(e), aim = this.aim;
       if (this.state === State.DEFENDING) {
-        this.defense.extendRoute(p); this.releasePointer();
-        if (!this.defense.commitRoute()) this.toast('Draw a longer running path', 1.2);
+        this.releasePointer(); this.defense.attemptTackle();
         return;
       }
       if (this.state === State.AIMING) {
@@ -325,7 +323,7 @@
       } else { this.releasePointer(); this.aim = aim; }
     }
     releasePointer() { const p = this.pointer; this.pointer = null; if (p && this.canvas.hasPointerCapture(p.id)) this.canvas.releasePointerCapture(p.id); }
-    cancelPointer(id) { if (this.pointer && id === this.pointer.id) { this.releasePointer(); if (this.state === State.DEFENDING) this.defense.cancelRoute(); if (this.state === State.AIMING) { this.aim = null; this.updatePower(0); } } }
+    cancelPointer(id) { if (this.pointer && id === this.pointer.id) { this.releasePointer(); if (this.state === State.DEFENDING) this.defense.cancelHold(); if (this.state === State.AIMING) { this.aim = null; this.updatePower(0); } } }
     chooseContact(x, y, timedOut) {
       if (this.state !== State.BALL_CONTACT || this.contact) return;
       this.contact = { x: clamp(x, -1, 1), y: clamp(y, -1, 1), timedOut, age: 0 }; this.audio.play('tap');
@@ -455,7 +453,7 @@
         if (this.pendingResult.wait <= 0) { this.pendingResult = null; this.transition(State.RESULT); } return;
       }
       if (this.state === State.HIGHLIGHT_INTRO && this.stateTime > .85) {
-        if (this.defense) { this.transition(State.DEFENDING); this.toast('Draw from blue · lead the opponent', 2.4); }
+        if (this.defense) { this.transition(State.DEFENDING); this.toast('Hold to chase · release when green', 2.4); }
         else if (this.index === 4) this.startInterception(); else { this.transition(State.AIMING); this.updatePower(0); }
       } else if (this.state === State.DEFENDING) {
         this.defense.update(dt);
@@ -884,7 +882,7 @@
     }
     drawPlayer(c, p) {
       const isControlled = p === this.controlled && ![State.TITLE, State.BALL_CONTACT].includes(this.state);
-      const defenseMoving = this.defense && (p === this.player ? this.defense.phase === 'running' && this.defense.routeIndex < this.defense.route.length : p === this.defense.opponent && (!this.defense.finished || !this.defense.tackle?.success));
+      const defenseMoving = this.defense && (p === this.player ? this.defense.phase === 'running' : p === this.defense.opponent && (!this.defense.finished || !this.defense.tackle?.success));
       const moving = [State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.state) || this.state === State.DEFENDING && defenseMoving;
       const isShooting = this.kicker === p && this.motionTime < 0.28;
       const celebration = p.celebration > 0;

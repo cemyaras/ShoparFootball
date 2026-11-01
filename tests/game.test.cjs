@@ -492,134 +492,126 @@ test('an advanced keeper can still save a central ground shot', () => {
 function defensePointer(g, point, id = 17) {
   return { button: 0, isPrimary: true, pointerId: id, clientX: g.view.x + point.x * g.view.scale, clientY: g.view.y + point.y * g.view.scale, preventDefault() {} };
 }
-function drawRoute(g, points) {
-  g.onPointerDown(defensePointer(g, g.player));
-  for (const point of points) g.onPointerMove(defensePointer(g, point));
-  g.onPointerUp(defensePointer(g, points[points.length - 1]));
-}
-function tapTackle(g) {
-  const event = defensePointer(g, g.ball);
-  g.onPointerDown(event); g.onPointerUp(event);
-}
+function holdChase(g, id = 17) { g.onPointerDown(defensePointer(g, { x: 800, y: 600 }, id)); }
+function releaseTackle(g, id = 17) { g.onPointerUp(defensePointer(g, { x: 800, y: 600 }, id)); }
 
-test('Win the Ball starts sixth with red possession and follows the actual drawn route', () => {
+test('Win the Ball starts sixth and holding anywhere follows the moving opponent', () => {
   const { game: g, elements } = fixture(); start(g, 5);
   assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('chapter-number').textContent, '6/6');
-  assert.equal(elements.get('chapter-progress').children.length, 6);
-  const red = g.defense.opponent;
-  assert.ok(Math.hypot(g.ball.x - red.x, g.ball.y - red.y) < 30);
-  assert.ok(Math.hypot(g.ball.x - g.player.x, g.ball.y - g.player.y) > 150);
-  drawRoute(g, [{ x: 500, y: 460 }, { x: 650, y: 410 }]);
-  assert.equal(g.defense.phase, 'running'); assert.equal(g.pointer, null);
+  const original = { ...g.player }, redX = g.defense.opponent.x;
+  holdChase(g); assert.equal(g.defense.phase, 'running'); assert.ok(g.pointer);
   g.update(.5);
-  assert.ok(g.player.x > 370 && g.player.x < 500, 'run to the first bend without teleporting');
-  assert.ok(g.player.y > 460); assert.ok(red.x > red.startX);
-  assert.ok(Math.hypot(g.ball.x - red.x, g.ball.y - red.y) < 30);
-  g.render();
+  assert.ok(g.player.x > original.x && g.player.y < original.y);
+  assert.ok(g.defense.opponent.x > redX);
+  assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) < 40);
+  assert.equal(g.pendingResult, null); g.render();
 });
 
-test('a well-positioned green-window tackle wins possession once and contributes to the summary', () => {
-  const { game: g, elements } = fixture(); start(g, 5);
-  drawRoute(g, [{ x: 650, y: 410 }]);
-  until(g, () => g.defense.timing().ready);
-  const elapsed = g.defense.elapsed; tapTackle(g);
+test('releasing on green wins immediately, transfers possession once and contributes to summary', () => {
+  const { game: g, elements } = fixture(); start(g, 5); holdChase(g);
+  until(g, () => g.defense.timing().ready); releaseTackle(g);
   assert.equal(g.resolution.kind, 'ball_won'); assert.equal(elements.get('result-title').textContent, 'BALL WON!');
-  assert.equal(g.stats.tackles, 1); assert.equal(g.stats.goals, 0); assert.equal(g.stats.misses, 0);
+  assert.equal(g.pointer, null); assert.equal(g.stats.tackles, 1); assert.equal(g.stats.goals, 0);
   assert.equal(g.outcomes[5], true);
-  tapTackle(g); g.finish('ball_won'); assert.equal(g.stats.tackles, 1);
-  const resolutionTime = until(g, () => g.state === 'RESULT');
-  assert.ok(elapsed + resolutionTime + .85 >= 4.8 && elapsed + resolutionTime + .85 <= 10);
+  releaseTackle(g); g.finish('ball_won'); assert.equal(g.stats.tackles, 1);
+  until(g, () => g.state === 'RESULT');
   assert.ok(Math.hypot(g.ball.x - g.player.x, g.ball.y - g.player.y) < 30);
   assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) > 20);
-  assert.match(elements.get('next-button').innerHTML, /NEXT/);
   g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
-  assert.equal(elements.get('total-tackles').textContent, 1);
-  assert.equal(elements.get('rating').textContent, 14);
+  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 14);
 });
 
-test('an early or late tap in range is a missed tackle, never a free possession win', () => {
+test('early release and release after green are missed tackles', () => {
   for (const late of [false, true]) {
-    const { game: g, elements } = fixture(); start(g, 5); drawRoute(g, [{ x: 650, y: 410 }]);
-    if (late) until(g, () => g.defense.timing().ready);
-    until(g, () => { const t = g.defense.timing(); return t.visible && t.inReach && t.positioned && !t.ready; });
-    tapTackle(g); assert.equal(g.resolution.kind, 'missed_tackle');
-    assert.equal(elements.get('result-title').textContent, 'MISSED TACKLE!');
+    const { game: g } = fixture(); start(g, 5); holdChase(g);
+    if (late) { until(g, () => g.defense.timing().ready); until(g, () => !g.defense.timing().ready); }
+    releaseTackle(g); assert.equal(g.resolution.kind, 'missed_tackle');
     assert.equal(g.stats.tackles, 0); assert.equal(g.stats.misses, 1);
-    until(g, () => g.state === 'RESULT');
-    assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) < 30);
   }
 });
 
-test('correct clock timing cannot win the ball from behind the opponent', () => {
-  const { game: g } = fixture(); start(g, 5); drawRoute(g, [{ x: 592, y: 392 }]);
-  until(g, () => { const t = g.defense.timing(); return t.visible && t.inReach && !t.positioned && t.phase > .4 && t.phase < .75; });
-  tapTackle(g); assert.equal(g.resolution.kind, 'missed_tackle'); assert.equal(g.stats.tackles, 0);
+test('green requires actual reach and position, not only the dribble clock', () => {
+  const { game: g } = fixture(); start(g, 5); holdChase(g);
+  until(g, () => g.defense.timing().ready);
+  const red = g.defense.opponent;
+  g.player.x = red.x - 30; g.player.y = red.y - 10;
+  assert.equal(g.defense.timing().positioned, false); assert.equal(g.defense.timing().ready, false);
+  releaseTackle(g); assert.equal(g.resolution.kind, 'missed_tackle');
 });
 
-test('wrong routes and no input allow the opponent to escape within ten seconds', () => {
-  for (const wrongRoute of [true, false]) {
-    const { game: g, elements } = fixture(); start(g, 5);
-    if (wrongRoute) { drawRoute(g, [{ x: 400, y: 600 }]); tapTackle(g); assert.equal(g.pendingResult, null); }
+test('no input or holding through every opportunity lets the opponent escape', () => {
+  for (const holding of [true, false]) {
+    const { game: g } = fixture(); start(g, 5); if (holding) holdChase(g);
     const elapsed = until(g, () => g.state === 'RESULT');
     assert.ok(elapsed + .85 >= 5 && elapsed + .85 <= 10);
-    assert.equal(g.resolution.kind, 'opponent_escaped');
-    assert.equal(elements.get('result-title').textContent, 'OPPONENT ESCAPED!');
-    assert.equal(g.stats.tackles, 0); assert.equal(g.stats.misses, 1);
+    assert.equal(g.resolution.kind, 'opponent_escaped'); assert.equal(g.pointer, null);
+    assert.equal(g.stats.tackles, 0);
   }
 });
 
-test('waiting too long before committing a route lets the moving opponent escape', () => {
-  const { game: g } = fixture(); start(g, 5); g.update(4);
-  drawRoute(g, [{ x: 650, y: 410 }]);
+test('late pursuit cannot catch an opponent who has escaped ahead', () => {
+  const { game: g } = fixture(); start(g, 5); g.update(5.8); holdChase(g);
   let green = false;
   while (g.state !== 'RESULT') { g.update(1 / 120); green ||= g.defense.timing().ready; }
-  assert.equal(green, false);
-  assert.equal(g.resolution.kind, 'opponent_escaped');
-  assert.equal(g.stats.tackles, 0);
+  assert.equal(green, false); assert.equal(g.resolution.kind, 'opponent_escaped');
 });
 
-test('cancelling a defensive drag does not launch a run and allows a fresh route', () => {
-  const { game: g } = fixture(); start(g, 5);
-  const original = { x: g.player.x, y: g.player.y };
-  g.onPointerDown(defensePointer(g, g.player)); g.onPointerMove(defensePointer(g, { x: 600, y: 400 }));
-  g.cancelPointer(17); g.update(.2);
-  assert.equal(g.defense.phase, 'planning'); assert.equal(g.defense.preview.length, 0);
+test('cancelled hold stops pursuit without tackling and a fresh hold resumes it', () => {
+  const { game: g } = fixture(); start(g, 5); holdChase(g); g.update(.3);
+  g.cancelPointer(17); const original = { ...g.player }; g.update(.2);
+  assert.equal(g.defense.phase, 'planning'); assert.equal(g.pendingResult, null);
   assert.equal(g.player.x, original.x); assert.equal(g.player.y, original.y);
-  drawRoute(g, [{ x: 650, y: 410 }]); assert.equal(g.defense.phase, 'running');
+  holdChase(g); assert.equal(g.defense.phase, 'running');
 });
 
-test('settings pause the defensive clock and restart clears possession, route, result, and statistics', () => {
-  const { game: g, elements } = fixture(); start(g, 5); drawRoute(g, [{ x: 650, y: 410 }]);
-  g.update(.3); const elapsed = g.defense.elapsed, ball = JSON.stringify(g.ball);
+test('settings cancel the hold and pause the encounter; restart clears all result state', () => {
+  const { game: g, elements } = fixture(); start(g, 5); holdChase(g); g.update(.3);
+  g.cancelPointer(17); const elapsed = g.defense.elapsed, ball = JSON.stringify(g.ball);
   elements.get('conditions-dialog').open = true; g.update(20);
   assert.equal(g.defense.elapsed, elapsed); assert.equal(JSON.stringify(g.ball), ball);
-  elements.get('conditions-dialog').open = false;
-  until(g, () => g.defense.timing().ready); tapTackle(g); assert.equal(g.stats.tackles, 1);
-  g.restart(); g.update(.9);
+  elements.get('conditions-dialog').open = false; holdChase(g);
+  until(g, () => g.defense.timing().ready); releaseTackle(g);
+  assert.equal(g.stats.tackles, 1); g.restart(); g.update(.9);
   assert.equal(g.state, 'DEFENDING'); assert.equal(g.defense.phase, 'planning');
-  assert.equal(g.defense.elapsed, 0); assert.equal(g.defense.route.length, 0); assert.equal(g.defense.tackle, null);
-  assert.equal(g.resolution, null); assert.equal(g.pendingResult, null); assert.equal(g.stats.tackles, 0);
-  assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) < 30);
+  assert.equal(g.defense.elapsed, 0); assert.equal(g.defense.tackle, null);
+  assert.equal(g.resolution, null); assert.equal(g.stats.tackles, 0);
 });
 
-test('defensive timing and success remain playable at 30, 60, and 120 updates per second', () => {
+test('all three approaches have readable green windows and work at 30, 60 and 120 FPS', () => {
+  const positions = new Set(), firstWindows = [];
   for (const fps of [30, 60, 120]) {
-    const { game: g } = fixture(); start(g, 5); drawRoute(g, [{ x: 650, y: 410 }]);
-    for (let i = 0; i < fps * 7 && !g.defense.timing().ready; i++) g.update(1 / fps);
-    assert.equal(g.defense.timing().ready, true, `${fps} fps`);
-    tapTackle(g); assert.equal(g.resolution.kind, 'ball_won'); g.render();
+    const { game: g } = fixture();
+    for (let variant = 0; variant < 3; variant++) {
+      start(g, 5); positions.add(`${g.player.x},${g.player.y}`); holdChase(g);
+      for (let i = 0; i < fps * 7 && !g.defense.timing().ready; i++) g.update(1 / fps);
+      assert.equal(g.defense.timing().ready, true);
+      const began = g.defense.elapsed; let window = 0;
+      while (g.defense.timing().ready) { g.update(1 / fps); window += 1 / fps; }
+      assert.ok(window >= .36, `readable window: ${fps} FPS, variant ${variant}, ${window}`);
+      firstWindows.push(began);
+      for (let i = 0; i < fps * 7 && !g.defense.timing().ready; i++) g.update(1 / fps);
+      assert.equal(g.defense.timing().ready, true); releaseTackle(g);
+      assert.equal(g.resolution.kind, 'ball_won'); g.render();
+    }
   }
+  assert.equal(positions.size, 3); assert.ok(Math.max(...firstWindows) - Math.min(...firstWindows) > .3);
 });
 
-test('restarting while drawing releases pointer capture before replacing the defensive highlight', () => {
-  const { game: g } = fixture(); start(g, 5);
-  let released = null;
-  g.canvas.hasPointerCapture = () => true;
-  g.canvas.releasePointerCapture = id => { released = id; };
-  g.onPointerDown(defensePointer(g, g.player)); g.onPointerMove(defensePointer(g, { x: 650, y: 410 }));
-  g.restart(); g.update(.9);
-  assert.equal(released, 17); assert.equal(g.pointer, null);
-  assert.equal(g.defense.preview.length, 0); assert.equal(g.defense.phase, 'planning');
+test('restarting a held chase releases capture and does not attempt a tackle', () => {
+  const { game: g } = fixture(); start(g, 5); let released = null;
+  g.canvas.hasPointerCapture = () => true; g.canvas.releasePointerCapture = id => { released = id; };
+  holdChase(g); g.restart(); g.update(.9);
+  assert.equal(released, 17); assert.equal(g.pointer, null); assert.equal(g.defense.phase, 'planning');
+  assert.equal(g.pendingResult, null);
+});
+
+test('moving the held finger and secondary pointers cannot tackle or steer', () => {
+  const { game: g } = fixture(); start(g, 5); holdChase(g);
+  g.onPointerMove(defensePointer(g, { x: 100, y: 100 }));
+  g.onPointerDown(defensePointer(g, g.ball, 18)); releaseTackle(g, 18);
+  assert.equal(g.pointer.id, 17); assert.equal(g.pendingResult, null);
+  until(g, () => g.defense.timing().ready); releaseTackle(g);
+  assert.equal(g.resolution.kind, 'ball_won');
 });
 
 test('all six highlights can be opened directly as independent practice attempts', () => {
@@ -638,8 +630,8 @@ test('all six highlights can be opened directly as independent practice attempts
 
 test('practice result retries the selected defense highlight with clean statistics and no summary', () => {
   const { game: g, elements } = fixture();
-  g.startPractice(5); g.update(.9); drawRoute(g, [{ x: 650, y: 410 }]);
-  until(g, () => g.defense.timing().ready); tapTackle(g);
+  g.startPractice(5); g.update(.9); holdChase(g);
+  until(g, () => g.defense.timing().ready); releaseTackle(g);
   assert.match(elements.get('next-button').innerHTML, /RETRY/);
   until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
   assert.equal(g.state, 'DEFENDING'); assert.equal(g.index, 5); assert.equal(g.practiceIndex, 5);

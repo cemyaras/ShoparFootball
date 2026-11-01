@@ -89,14 +89,14 @@ Test full-power bottom contact with left, central, and right aim directions: the
 
 ## Win the Ball
 
-- Start the sixth highlight through **NEXT** after off-ball reception. Verify 6/6 and six progress dots, with red initially holding the ball.
-- Drag from blue through multiple points, release, and watch blue follow the bends while red continues dribbling. A stationary tap or a cancelled drag must not commit a route.
-- Lead red's run. Once the ring appears, wait until **TAP!** is green and tap/click. Confirm a visible lunge, leg extension, transferred possession, and immediate **BALL WON!** feedback.
-- Repeat with an early tap and with a tap just after green. Both must produce **MISSED TACKLE!** while red retains the ball. Correct clock timing from behind or outside reach must not win possession.
-- Draw away from red, commit too late, or do nothing. Red must escape within roughly 5–10 seconds, with **OPPONENT ESCAPED!** and no free possession win.
-- Repeat on mouse and touch, at portrait and short landscape sizes. Check that the ring stays visible without obscuring the dribbler; its size must remain readable across zoom levels.
-- Open settings/help while planning or running: both players and the tackle clock must pause. Rotate during a captured route: it must cancel safely. Restart during drawing and after each outcome; no route, old possession, delayed result, or defensive statistic should leak into the retry.
-- Follow **NEXT** after the defensive result. Summary must count a ball win separately from goals and include it in the rating. **PLAY AGAIN** must reset all six outcomes and ball-win statistics.
+- Start the sixth highlight through NEXT or CHOOSE HIGHLIGHT. Verify 6/6, red possession, and HOLD TO CHASE next to the ball.
+- Hold anywhere on the pitch; blue must pursue without needing a path or steering. Move the held pointer and add a secondary pointer: neither should affect pursuit or trigger a tackle.
+- Release when the ball ring turns green and says RELEASE! Confirm immediate BALL WON!, a visible lunge, and transferred possession. The animation must not reverse the decision.
+- Release immediately, or just after green: both must produce MISSED TACKLE! while red retains possession. Holding through every opportunity and doing nothing must produce OPPONENT ESCAPED! within ten seconds.
+- Retry through all three approaches. Each must have a readable opportunity; the same memorized hold duration should not fit every variant.
+- Repeat with mouse and touch, portrait and short landscape. The ball ring and prompt must remain readable and follow the actual ball.
+- Cancel a held pointer, rotate, blur the page, or open a dialog: pursuit must stop without tackling. Dialogs pause the clock. Resume with a fresh hold. Restart must clear the pointer, result, old possession, and statistics.
+- Follow NEXT after the sixth result. Summary counts ball wins separately from goals and includes them in the rating; PLAY AGAIN resets all outcomes and statistics.
 
 ## Goalkeeper positions
 
@@ -158,6 +158,8 @@ Rotate the device during an unfinished drag and confirm that it cancels without 
 - At small portrait and short landscape sizes, scroll the picker and reach all six cards plus **PLAY ALL 6**. Check title/result/summary selection buttons for clipping.
 
 ## Validation history
+
+The hold/release defensive redesign passes 57 automated tests, including three approach variants, readable green windows at 30/60/120 FPS, release timing, actual positioning, no-input/held-input escape, pointer cancellation, secondary pointers, dialog pause, restart, retry, and summary scoring. Chrome checks passed all three approaches with native mouse and emulated touch at 1280 × 900, 390 × 844, and 568 × 320. Early release, gesture cancellation, and holding until escape also passed with no runtime errors. The diagonal rhythm was adjusted after comparing actual hold times and rechecked at all three sizes. Screenshots of the ball ring and release prompt were reviewed. A complete native-touch six-highlight session passed through passes, reception, the new defensive hold/release, summary, and replay; desktop mouse shooting also passed.
 
 The ball-physics update passes 56 regression tests. Real-time Chrome checks with native mouse and emulated touch (1280 × 900 and 390 × 844) also passed topped shots, bouncing goals, chips over an advanced keeper, clear over-bar misses, and curve goals; no runtime errors occurred. Bounce and chip screenshots were reviewed. A same-physics comparison against the previous keeper tracking confirmed several curved shots can now beat the keeper where continuous tracking saved them. New cases cover progressive top-contact power loss, the lift/pace tradeoff, energy loss and settling over multiple bounces, matching trajectories at 30/60/120 FPS, faster ground-spin decay, delayed keeper observations, committed dives, and a live bouncing goal with impact feedback. The soft-chip regression now uses lower contact (0.94) to account for the new forward-pace tradeoff. A complete six-highlight native-touch session, summary, replay, rotation cancellation, and desktop mouse flow also passed.
 

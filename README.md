@@ -58,7 +58,7 @@ For the off-ball highlight, tap a destination on the pitch. Your player moves au
 
 To test a particular scenario, open **CHOOSE HIGHLIGHT** and select its name. **Win the Ball** opens the defensive action immediately. In single-highlight practice, the result button is **RETRY**, which resets that same scenario and its statistics. Use the top-left chance counter or the result/summary selection button to switch highlights; closing the menu resumes the current attempt. **PLAY ALL 6** returns to the normal sequence with a fresh session.
 
-For **Win the Ball**, draw a running path starting on your blue player and release to run it. Lead the moving red opponent rather than chasing their old position. When close, the tackle ring appears: get alongside the exposed ball and tap/click when it shows **TAP!** in green. A good tackle wins possession; poor timing misses, and a wrong route or late arrival lets the opponent escape. The highlight ends at the result screen, without a counterattack.
+For **Win the Ball**, hold anywhere on the pitch to chase the red opponent. Keep watching the ball: release your finger or mouse button when its ring turns green and says **RELEASE!**. Early or late release misses; holding through every opportunity or starting too late lets the opponent escape. Retries rotate through side, diagonal, and chase approaches with different dribble rhythms. Cancelled gestures stop pursuit safely without tackling. The highlight ends at the result screen, without a counterattack.
 
 Use **↻** in the top-right corner to retry the current highlight and reset its statistics. After six highlights, review your goals, completed passes, balls won, missed chances, and performance score. **PLAY AGAIN** starts a fresh session.
 
@@ -73,7 +73,7 @@ ShoparFootball/
 │   ├── css/
 │   │   └── style.css       # Presentation and responsive layouts
 │   └── js/
-│       ├── defense.js      # Defensive route, dribble, tackle timing, and animation
+│       ├── defense.js      # Defensive hold/release, dribble, tackle timing, and animation
 │       ├── environment.js  # Venue palettes, scenery, weather, and preferences
 │       └── game.js         # Input, state, physics, AI, audio, and rendering
 ├── docs/

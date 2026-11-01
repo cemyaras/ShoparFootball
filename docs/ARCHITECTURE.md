@@ -17,7 +17,7 @@ The JavaScript uses a strict-mode closure to keep implementation details scoped.
 | AI | Delayed goalkeeper reactions, limited movement and dives, defender pressure, and teammate receiving runs. |
 | Rendering | Procedural pitch, players, ball, trajectory preview, trails, contact close-up, and celebrations. |
 | Environment | Venue scenery, surface texture, weather lighting/particles, and local preferences. |
-| Defense | A drawn route, opponent possession, position-dependent tackle timing, and defensive result animation. |
+| Defense | Hold-to-chase input, moving possession, release-to-tackle timing, and defensive result animation. |
 | Audio | Optional tones synthesized through the Web Audio API without external audio assets. |
 
 `FootballGame` owns the state and coordinates the systems through methods. `AudioSystem` manages sound independently. Rendering reads gameplay state; simulation changes happen in the update and interaction methods.
@@ -32,7 +32,7 @@ The JavaScript uses a strict-mode closure to keep implementation details scoped.
 | `BALL_CONTACT` | Waits for contact or a six-second timeout, then enters `BALL_IN_MOTION`. |
 | `BALL_IN_MOTION` | Advances physics and AI. A completed pass returns to `AIMING`; a resolved chance leads to `RESULT`. |
 | `INTERCEPTION` | Moves an incoming pass and lets the user choose a player destination. Receiving enters `AIMING`; losing the chance leads to `RESULT`. |
-| `DEFENDING` | Lets the user draw one route, runs it while the opponent dribbles, then accepts a timed tackle. Resolution leads to `RESULT`. |
+| `DEFENDING` | Chases while the pointer is held and tackles on release when the ball is exposed. Resolution leads to `RESULT`. |
 | `RESULT` | Offers the next highlight, or `SESSION_SUMMARY` after the sixth. |
 | `SESSION_SUMMARY` | Shows session statistics and offers a fresh session. |
 
@@ -110,9 +110,9 @@ The arena occupies the viewport with no document-style header, sidebar, or foote
 
 `DefensiveHighlight` encapsulates the sixth highlight and reuses the existing player objects, `movePlayer`, Pointer Events, Canvas transform, sprites, audio, banners, and result/summary flow. The `DEFENDING` state has planning, running, and resolved phases. It uses a stable camera focused on the two participants. No attacking physics or input rules change in the original five highlights.
 
-Red starts in possession. Its deterministic dribble moves continuously, including while a route is drawn; blue follows the actual sampled polyline at a bounded speed after release. Sampling filters near-duplicate points and limits route length/point count. Cancellation discards only the preview; restart releases pointer capture before rebuilding the highlight. Settings/help pause both movement and the defensive clock.
+Red starts in possession and dribbles continuously. A primary pointer held anywhere on the pitch moves blue toward the exposed side of the moving opponent. Release immediately evaluates the visible opportunity and locks the result before the tackle animation. Movement of the held pointer does not steer; secondary pointers do not interfere. Cancellation, rotation, blur, and opening a dialog stop pursuit without attempting a tackle. Restart releases capture before rebuilding the highlight. Settings/help/selection pause movement and the defensive clock.
 
-The tackle ring appears within 82 world units. Its cursor shares a 1.2-second cycle with the dribbler's exposed-ball animation. Green requires all of: an actual ball distance of at most 43 units, a side/front approach rather than a shielded position behind red, and the visible timing window. Tapping outside that window while close produces `missed_tackle`; tapping from too far away cannot win possession. An unsuccessful route or no action reaches `opponent_escaped` at 7.2 seconds of active play. The intro and 1.3-second resolution put normal runs at approximately 5–10 seconds.
+Each new defensive attempt rotates through side, diagonal, and chase placements, with different running speeds, dribble periods (1.25–1.55 seconds), and initial phases. The ball moves farther from the red player's foot during each exposed phase. The ring is drawn around the actual ball, with HOLD TO CHASE, HOLD…, and RELEASE! prompts. Green requires a ball distance of at most 43 world units, a side/front position, and the exposed part of the dribble. A cycle is admitted only when at least 420 ms remain, avoiding a fleeting green on late arrival. Release outside green produces `missed_tackle`; no input, late pursuit, or holding until the 7.2-second deadline produces `opponent_escaped`. A successful release produces `ball_won` immediately, then transfers the ball in the existing lunge animation.
 
 A successful tackle lunges the blue sprite toward the ball, extends a leg, and transfers the ball to its boot. Failure leaves red in possession and moving away. `ball_won` counts as a successful highlight and increments `stats.tackles`, without incrementing goals or starting a counterattack. The summary exposes **BALL WON** and rates the six-highlight session with 14 points per goal/ball win, up to nine pass points, and seven for off-ball reception (capped at 100).
 
