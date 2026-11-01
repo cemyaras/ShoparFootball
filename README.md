@@ -26,15 +26,19 @@ To try the game on a phone or tablet, connect it to the same local network as yo
 - Ball physics include height, spin, friction, collisions, saves, and out-of-play detection.
 - Completed passes transfer control to the receiver, who can shoot or return the ball.
 - Goalkeeper, defender, and teammate behavior supports each highlight.
+- Two highlights per session feature a keeper off the line, leaving space for a soft chip. The other three keep a deeper goalkeeper; restarts preserve the position.
 - Responsive layouts, high-DPI Canvas rendering, and shared Pointer Events input for mouse and touch.
+- Three selectable venues: a striped stadium, an asphalt street court, and a dirt ground.
+- Sunny, cloudy, rainy, and snowy weather, with procedural lighting, puddles, and snowfall.
 - Highlight restart, session statistics, performance rating, and optional synthesized audio.
 
 ## How to play
 
-1. Select **Tap to Play**.
-2. Choose **SHOOT** or **PASS** before aiming.
-3. Drag backward from near the ball. The kick travels opposite your drag; a longer pull adds power.
-4. Release to open the close-up ball, then tap your contact point:
+Use the weather icon in the top-right corner to open **Match settings**, choose your pitch/weather, and toggle sound. The match pauses while settings or **?** help is open. Choices carry across highlights and are remembered on this browser when local storage is available. The environments change the scene; shot physics and goal dimensions remain consistent.
+
+1. Select **PLAY**. Use **?** for the quick control guide.
+2. Drag backward from near the ball. The kick travels opposite your drag; a longer pull adds power. Every kick uses the same controls and physics: aim at the goal to shoot or toward a teammate to combine.
+3. Release to open the close-up ball, then tap your contact point:
 
 | Contact point | Effect |
 | --- | --- |
@@ -50,9 +54,9 @@ For a chip, tap moderately below center. Combining strong power with contact nea
 
 For the off-ball highlight, tap a destination on the pitch. Your player moves automatically; reach the incoming pass before it gets away. After a teammate receives a pass, control transfers to that player.
 
-Use **Restart** to retry the current highlight and reset its statistics. After five highlights, review your goals, completed passes, missed chances, and performance score. **Play Again** starts a fresh session. The sound button toggles audio.
+Use **↻** in the top-right corner to retry the current highlight and reset its statistics. After five highlights, review your goals, completed passes, missed chances, and performance score. **PLAY AGAIN** starts a fresh session.
 
-During a kick, watch the ball separate from its ground shadow and use the height meter's **BAR** marker to judge its flight. Play slows near the goal. Goals continue into the net, saves end with the keeper holding the ball, and shots over the bar continue behind the goal. A green tick marks a successful crossing; frame hits rebound and are reported separately.
+During a kick, watch the ball separate from its ground shadow and use the height meter's **BAR** marker to judge its flight. Play slows near the goal. Goals continue into the net, saves end with the keeper holding the ball, and shots over the bar continue into the open space behind the goal. The camera stays on the goal; high misses leave the frame naturally and the result follows shortly after. A green tick marks a successful crossing; frame hits rebound and are reported separately.
 
 ## Repository structure
 
@@ -63,6 +67,7 @@ ShoparFootball/
 │   ├── css/
 │   │   └── style.css       # Presentation and responsive layouts
 │   └── js/
+│       ├── environment.js  # Venue palettes, scenery, weather, and preferences
 │       └── game.js         # Input, state, physics, AI, audio, and rendering
 ├── docs/
 │   ├── ARCHITECTURE.md     # Runtime design and game systems
@@ -78,9 +83,9 @@ ShoparFootball/
 
 ## Mobile play
 
-On phones and tablets, the arena fits the available screen height and respects display safe areas. Portrait mode keeps the action buttons and power meter below the pitch; short landscape screens place them alongside it. The camera frames the current opportunity so the players and goal remain readable.
+The game fills the viewport on desktop, phones, and tablets, and respects display safe areas. A compact score and chance counter sit above the pitch, with no action-selection menu. A small power meter appears only while dragging. The camera frames the current opportunity so the players and goal remain readable. There are no page headings, side panels, or persistent instruction cards.
 
-On compact screens, action controls step aside while the ball is moving and return when possession is available. The outcome and next-highlight button use the expanded arena.
+Kick directly from the ball; there are no separate shot and pass modes. Help and settings are available on demand; the outcome and next-highlight button appear over the arena. The Canvas keeps the same dimensions across gameplay phases, avoiding camera jumps when controls change.
 
 Use one finger to pull back from the ball. Full power needs a short, screen-relative drag. Release, then tap the enlarged contact ball. Rotating the device cancels an unfinished drag safely; start a new drag after the layout settles. No fullscreen permission, orientation lock, or app installation is needed.
 
@@ -92,6 +97,7 @@ If Node.js is available, check JavaScript syntax with:
 
 ```bash
 node --check src/js/game.js
+node --check src/js/environment.js
 node --test tests/game.test.cjs
 ```
 
@@ -99,6 +105,6 @@ See [Architecture](docs/ARCHITECTURE.md) for the game systems, [Testing](docs/TE
 
 ## Project status
 
-This is a playable prototype focused on on-pitch interactions. Session statistics live in memory and reset when the page reloads. There is no career mode, account system, or persistent storage.
+This is a playable prototype focused on on-pitch interactions. Session statistics live in memory and reset when the page reloads. Only pitch and weather preferences are stored locally. There is no career mode or account system.
 
 The initial gameplay was validated in Chrome using mouse input and emulated mobile touch. Physical-device testing is documented in the [testing guide](docs/TESTING.md).

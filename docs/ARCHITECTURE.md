@@ -2,7 +2,7 @@
 
 ## Runtime
 
-`index.html` provides the page structure, Canvas, controls, and overlays. It loads `src/css/style.css` and defers execution of `src/js/game.js` until the document has been parsed.
+`index.html` provides a viewport-sized arena, floating HUD and gesture input, overlays, and native settings/help dialogs. It loads `src/css/style.css` and defers `src/js/environment.js` followed by `src/js/game.js` until the document has been parsed.
 
 The JavaScript uses a strict-mode closure to keep implementation details scoped. A `FootballGame` instance is available as `window.footballGame` for inspection. The script stays compatible with direct `file://` loading; it does not require module imports, network requests, or a bundler.
 
@@ -10,12 +10,13 @@ The JavaScript uses a strict-mode closure to keep implementation details scoped.
 
 | System | Responsibility |
 | --- | --- |
-| Scenario definitions | Initial positions, default actions, descriptions, and coaching tips for all five highlights. |
+| Scenario definitions | Initial positions, descriptions, and coaching tips for all five highlights. |
 | State machine | Valid interaction phases, overlay visibility, and progression through a session. |
 | Input | Pointer capture, drag direction and power, contact selection, cancellation, and interception destinations. |
 | Physics | Kick velocity, spin, height, friction, collisions, goal-line crossing, and out-of-play checks. |
 | AI | Delayed goalkeeper reactions, limited movement and dives, defender pressure, and teammate receiving runs. |
 | Rendering | Procedural pitch, players, ball, trajectory preview, trails, contact close-up, and celebrations. |
+| Environment | Venue scenery, surface texture, weather lighting/particles, and local preferences. |
 | Audio | Optional tones synthesized through the Web Audio API without external audio assets. |
 
 `FootballGame` owns the state and coordinates the systems through methods. `AudioSystem` manages sound independently. Rendering reads gameplay state; simulation changes happen in the update and interaction methods.
@@ -37,7 +38,7 @@ A brief pending-result delay leaves goals and saves visible before the result ov
 
 ## Coordinates and timing
 
-Gameplay uses a fixed 1000 × 740 world. The desktop viewport fits that world; the compact layout frames the goal and the current scenario's participants with extra room behind the ball for dragging. Camera bounds update at a new highlight or possession and remain stable during a kick. The viewport computes a uniform scale and offset. Input uses the inverse transform, so mouse and touch positions map to the same world coordinates.
+Gameplay uses a fixed 1000 × 740 playing area with additional run-off ground behind the goal. Every viewport frames the goal and the current scenario's participants with extra room behind the ball for dragging. The transform reserves space for the top HUD and dragging below the ball. The temporary power indicator floats above the Canvas without resizing it between gameplay phases. Camera bounds update at a new highlight or possession and remain stable while aiming and striking. The camera also stays fixed during misses, keeping the goal as a visible reference. The viewport computes a uniform scale and offset. Input uses the inverse transform, so mouse and touch positions map to the same world coordinates.
 
 Canvas backing dimensions account for device pixel ratio, capped at three. CSS controls the visible dimensions using dynamic viewport height and safe-area padding on compact screens. `ResizeObserver`, window resizing, and visual viewport resizing keep both mappings current. A resize cancels an active drag before changing its coordinate transform.
 
@@ -57,9 +58,11 @@ Goal-line classification uses the grounded collision radius and distances to fin
 
 Shots use slower playback near the goal. Ball physics and AI receive the same scaled delta time, while interface timers use real time. A height meter and ground-shadow separation distinguish low shots from rising and dropping chips. Outcome banners use Canvas screen coordinates so their text stays readable independently of the world camera.
 
-A resolved chance retains its physical outcome while a brief animation plays. Goals advance into the net, rebound from its rear and sides, and fall to the floor; net motion begins on impact. Saves draw the held ball over the keeper's hands. High and wide shots continue beyond the goal, and frame hits rebound toward the field. The result card appears after this action has been visible.
+A resolved chance retains its physical outcome while a brief animation plays. Goals advance into the net, rebound from its rear and sides, and fall to the floor; net motion begins on impact. Saves draw the held ball over the keeper's hands. High and wide shots continue beyond the goal, and frame hits rebound toward the field. Airborne misses keep their velocity and gravity while leaving the visible arena. Once the entire ball is outside the Canvas, the result follows after a short pause. A maximum delay prevents long waits for distant, offscreen landings.
 
-Ground shadows are rendered beneath players. Low balls use ground depth ordering, airborne balls are rendered over players, and balls above the goal render after the frame. A crossing marker highlights where a goal or miss happened. These presentation effects do not award goals independently of the goal-line collision check.
+All venues have a short, finite apron behind the net, followed by their complete stands, wall, or trees. The rear scenery is shifted by only 55 world units; there is no corridor cut through it. Shots do not pan or zoom the camera away from the goal. Venue decorations have no collision surfaces, so a clear miss exits the frame without an invented rebound.
+
+Ground shadows are rendered beneath players. Low balls use ground depth ordering, airborne balls are rendered over players, and balls above the goal render after the frame. Crossing markers highlight successful goals and actual frame impacts. Clear misses have no stationary goal-line marker that could be mistaken for a collision. These presentation effects do not award goals independently of the goal-line collision check.
 
 ## Player and ball scale
 
@@ -67,18 +70,36 @@ Outfield players and the on-field ball share a world-space depth scale, from 1.1
 
 The keeper retains the goal proportions described above. Player/ball ratios are independent of viewport size and device pixel ratio; the ball is not enlarged to enforce a minimum CSS size. Its outline and trail preserve visibility, while pointer input retains a separate generous hit area. The contact close-up remains large for accurate single-finger selection.
 
+## Goalkeeper positioning
+
+Starting a session shuffles a plan with two advanced keepers and three near the goal line. A near-line keeper starts at y = 100; an advanced keeper starts at y = 174, leaving a visible gap behind them. The plan belongs to the session, so restarting the same highlight preserves the initial placement. A new session shuffles again.
+
+Both profiles track the ball laterally. An advanced keeper holds depth against ground shots and passes, then backpedals at a limited speed when a lofted shot approaches. This creates a real chip opportunity without teleporting back to the line or changing shot physics. Keeper-clearance detection compares the ball against the moving keeper plane, and the intro/coach text calls attention to the open space.
+
 ## Ball contact and possession
 
 Possession, reception, and kick execution use the same foot-level ball position. The ball sits beside the right boot, and the aim preview begins at the same point as the actual kick. Goalkeeper reaction timing allows for this slightly longer shooting distance while keeping central shots saveable.
 
-Drag distance sets kick power, and the opposite drag vector sets direction. The contact tap is normalized within the close-up ball. Its horizontal offset sets spin, its vertical offset changes loft, and edge or late contact affects accuracy or strength. Shot power scales upward launch as well as forward velocity, so full-power bottom contact can clear the bar rather than repeatedly arriving at crossbar height. Passing retains its gentler loft model.
+Drag distance sets kick power, and the opposite drag vector sets direction. The contact tap is normalized within the close-up ball. Its horizontal offset sets spin, its vertical offset changes loft, and edge or late contact affects accuracy or strength. Shot power scales upward launch as well as forward velocity, so full-power bottom contact can clear the bar rather than repeatedly arriving at crossbar height. All kicks share this launch model, friction, and playback timing; there is no shot/pass mode or hidden intent classification.
 
 The aim preview and live motion share the velocity and integration methods. The preview assumes central contact; the later contact tap can change the actual trajectory.
 
-Passes use the same input and physics as shots. Teammates run toward the moving ball and receive it when close enough and below the receiving-height threshold. Possession then transfers to the receiver. Defenders can intercept or block before reception. The off-ball scenario uses a moving incoming pass and a tap-selected player destination.
+Every kick can become a pass when a teammate reaches it. Teammates always react to the moving ball and receive it when close enough and below the receiving-height threshold, independent of highlight type. Possession then transfers to the receiver. Defenders can intercept or block before reception. The off-ball scenario uses a moving incoming pass and a tap-selected player destination.
 
 ## Lifecycle and storage
 
 Event listeners are registered through a helper that records cleanup functions. `destroy()` removes listeners, disconnects the resize observer, cancels the animation frame, and closes the audio context.
 
-Session statistics and outcomes are held in memory. The project has no backend or browser storage dependency.
+Session statistics and outcomes are held in memory. `FootballEnvironment` stores only the selected venue and forecast under `shopar-football.conditions` in local storage. Unknown values are ignored; corrupt or denied storage falls back safely to stadium/sunny. The game works without storage or a backend.
+
+## Venues and weather
+
+`FootballEnvironment` renders three venues with shared field markings and goal geometry. The stadium retains striped grass and animated stands. The street venue adds asphalt, cracks, apartment fronts, brickwork, and a chain-link fence. The dirt venue adds a worn earth surface, trees, timber rails, and benches.
+
+Four independent weather presets alter the presentation. Rain adds puddles and moving streaks; snow adds ground patches and drifting flakes. Cloudy weather cools/dims the scene, while sunny weather adds a warm tint. Particle counts are fixed, textures use deterministic positions, and reduced-motion users receive static precipitation. Atmosphere is drawn before the contact close-up and outcome banner, keeping play feedback legible.
+
+The native settings and help dialogs provide keyboard focus trapping, Escape dismissal, and focus restoration. Opening either dialog cancels a captured drag and pauses `update`, including contact timeouts and pending results. Closing a dialog resets the frame timestamp before resuming. Selections update immediately without reloading actors or changing physics, session progress, or scores.
+
+## Game interface
+
+The arena occupies the viewport with no document-style header, sidebar, or footer. Score and five-chance progress form a small top HUD. There is no kick-selection dock. A non-interactive power track appears near the bottom only while dragging. Settings contain venue, weather, and sound; the question-mark button opens a short control guide. Instructions are available on demand instead of remaining around the pitch. Scenario names and exposed-keeper warnings appear briefly as toasts. Detailed result/flight announcements remain available to assistive technology, while the visible UI emphasizes the ball, outcome, and next action.

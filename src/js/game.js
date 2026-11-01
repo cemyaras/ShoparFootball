@@ -6,7 +6,9 @@
   const State = Object.freeze({ TITLE: 'TITLE', HIGHLIGHT_INTRO: 'HIGHLIGHT_INTRO', AIMING: 'AIMING', BALL_CONTACT: 'BALL_CONTACT', BALL_IN_MOTION: 'BALL_IN_MOTION', INTERCEPTION: 'INTERCEPTION', RESULT: 'RESULT', SESSION_SUMMARY: 'SESSION_SUMMARY' });
   const W = 1000, H = 740;
   const HEIGHT_PROJECTION = .52;
-  const STADIUM_OFFSET = -48;
+  const BACKDROP_SHIFT = -55;
+  const STADIUM_OFFSET = -48 + BACKDROP_SHIFT;
+  const BALL_GRAVITY = 260, MISS_PLAYBACK = .42;
   // Projected mouth: 200 × 58.24; standing keeper: 40.7 units tall.
   // Net depth is separate from upright height; all heights use the ball's projection.
   const GOAL = Object.freeze({ height: 112, depth: 24, postWidth: 5, keeperScale: 1.1, keeperOffset: 16, keeperReach: 70, keeperReaction: .28 });
@@ -20,11 +22,11 @@
   const length = (x, y) => Math.hypot(x, y);
   const distance = (a, b) => length(a.x - b.x, a.y - b.y);
   const SCENARIOS = [
-    { title: 'One on one.', tag: 'IN THE SPOTLIGHT', description: 'Just you and the keeper. Pick your corner. Hold your nerve.', intro: 'A great chance! You’re through on goal.', action: 'SHOOT', player: [500, 365], mates: [], defenders: [], tip: 'Aim away from the keeper. A firm shot into a corner is hard to stop.' },
-    { title: 'From distance.', tag: 'A LITTLE AMBITION', description: 'Outside the box. A sliver of space. Give the keeper something to think about.', intro: 'Space opens up outside the area. Have a go!', action: 'SHOOT', player: [540, 520], mates: [[735, 345]], defenders: [[408, 320], [657, 268]], tip: 'You’ll need power from here. Tap below the ball’s center for a little lift.' },
-    { title: 'The through ball.', tag: 'SEE IT BEFORE THEY DO', description: 'Your teammate is on the move. Find the space, then find the finish.', intro: 'A runner breaks free on the left. Lead the pass!', action: 'PASS', player: [600, 476], mates: [[340, 390]], defenders: [[516, 308], [730, 278]], tip: 'Pass toward the mint run marker. Your teammate will chase the ball, then you can shoot.' },
-    { title: 'Two against two.', tag: 'BETTER TOGETHER', description: 'Two shirts ahead of you. A teammate to your right. Find your way through.', intro: 'Two against two. Combine, or back yourself.', action: 'PASS', player: [379, 425], mates: [[680, 350]], defenders: [[464, 300], [590, 263]], tip: 'A ground pass across to your teammate can open a better angle. Or take the shot.' },
-    { title: 'Read the game.', tag: 'RIGHT PLACE. RIGHT TIME.', description: 'The ball is on its way. Read the pass, get there, and make it yours.', intro: 'An incoming pass! Tap the marked space to meet it.', action: 'SHOOT', player: [485, 428], mates: [[200, 320]], defenders: [[737, 292]], tip: 'Tap ahead of the moving ball, near the mint ring. You move automatically.' }
+    { title: 'One on one.', tag: 'IN THE SPOTLIGHT', description: 'Just you and the keeper. Pick your corner. Hold your nerve.', intro: 'A great chance! You’re through on goal.', player: [500, 365], mates: [], defenders: [], tip: 'Aim away from the keeper. A firm shot into a corner is hard to stop.' },
+    { title: 'From distance.', tag: 'A LITTLE AMBITION', description: 'Outside the box. A sliver of space. Give the keeper something to think about.', intro: 'Space opens up outside the area. Have a go!', player: [540, 520], mates: [[735, 345]], defenders: [[408, 320], [657, 268]], tip: 'You’ll need power from here. Tap below the ball’s center for a little lift.' },
+    { title: 'The through ball.', tag: 'SEE IT BEFORE THEY DO', description: 'Your teammate is on the move. Find the space, then find the finish.', intro: 'A runner breaks free on the left. Lead the pass!', player: [600, 476], mates: [[340, 390]], defenders: [[516, 308], [730, 278]], tip: 'Pass toward the mint run marker. Your teammate will chase the ball, then you can shoot.' },
+    { title: 'Two against two.', tag: 'BETTER TOGETHER', description: 'Two shirts ahead of you. A teammate to your right. Find your way through.', intro: 'Two against two. Combine, or back yourself.', player: [379, 425], mates: [[680, 350]], defenders: [[464, 300], [590, 263]], tip: 'A ground pass across to your teammate can open a better angle. Or take the shot.' },
+    { title: 'Read the game.', tag: 'RIGHT PLACE. RIGHT TIME.', description: 'The ball is on its way. Read the pass, get there, and make it yours.', intro: 'An incoming pass! Tap the marked space to meet it.', player: [485, 428], mates: [[200, 320]], defenders: [[737, 292]], tip: 'Tap ahead of the moving ball, near the mint ring. You move automatically.' }
   ];
 
   class AudioSystem {
@@ -55,14 +57,16 @@
   class FootballGame {
     constructor() {
       this.canvas = $('game'); this.ctx = this.canvas.getContext('2d'); this.audio = new AudioSystem();
-      this.state = State.TITLE; this.stateTime = 0; this.time = 0; this.index = 0; this.mode = 'SHOOT';
+      this.environment = new window.FootballEnvironment();
+      this.state = State.TITLE; this.stateTime = 0; this.time = 0; this.index = 0;
       this.stats = { goals: 0, passes: 0, misses: 0, receives: 0 }; this.outcomes = [];
+      this.keeperPlan = Array(SCENARIOS.length).fill('line');
       this.pointer = null; this.aim = null; this.kick = null; this.contact = null;
       this.particles = []; this.trail = []; this.ripples = []; this.toastTime = 0; this.shake = 0; this.flash = 0;
       this.view = { scale: 1, x: 0, y: 0, width: 1000, height: 740 }; this.lastTime = null;
       this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       this.banner = null; this.netWobble = 0; this.crowd = this.initCrowd();
-      this.handlers = []; this.loadActors(0); this.bindEvents(); this.resize(); this.updateUI();
+      this.handlers = []; this.loadActors(0); this.bindEvents(); this.resize(); this.updateUI(); this.updateConditionsUI();
       this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe($('canvas-wrap'));
       this.frame = this.frame.bind(this); this.raf = requestAnimationFrame(this.frame);
     }
@@ -78,9 +82,21 @@
       this.listen($('again-button'), 'click', () => this.startSession());
       this.listen($('next-button'), 'click', () => this.nextHighlight());
       this.listen($('restart-button'), 'click', () => { if (![State.TITLE, State.SESSION_SUMMARY].includes(this.state)) this.restart(); });
-      this.listen($('shoot-button'), 'click', () => this.selectMode('SHOOT'));
-      this.listen($('pass-button'), 'click', () => this.selectMode('PASS'));
       this.listen($('sound-button'), 'click', () => this.audio.toggle());
+      this.listen($('conditions-button'), 'click', () => {
+        this.cancelPointer(this.pointer?.id);
+        $('conditions-dialog').showModal();
+      });
+      for (const id of ['conditions-close', 'conditions-done']) this.listen($(id), 'click', () => $('conditions-dialog').close());
+      this.listen($('conditions-dialog'), 'close', () => { this.lastTime = null; });
+      this.listen($('help-button'), 'click', () => { this.cancelPointer(this.pointer?.id); $('help-dialog').showModal(); });
+      for (const id of ['help-close', 'help-done']) this.listen($(id), 'click', () => $('help-dialog').close());
+      this.listen($('help-dialog'), 'close', () => { this.lastTime = null; });
+      this.listen($('conditions-dialog'), 'change', e => {
+        if (e.target.name === 'pitch') this.environment.set(e.target.value, this.environment.weather);
+        else if (e.target.name === 'weather') this.environment.set(this.environment.pitch, e.target.value);
+        this.updateConditionsUI();
+      });
       this.listen(window, 'resize', () => this.resize());
       if (window.visualViewport) this.listen(window.visualViewport, 'resize', () => this.resize());
       this.listen(window, 'blur', () => this.cancelPointer(this.pointer?.id));
@@ -92,8 +108,10 @@
       if (!rect.width || !rect.height) return;
       this.compact = window.matchMedia('(max-width: 1024px), (max-width: 1180px) and (max-height: 600px)').matches;
       const bounds = this.cameraBounds();
-      const scale = Math.min(rect.width / bounds.width, rect.height / bounds.height);
-      const next = { width: rect.width, height: rect.height, scale, x: (rect.width - bounds.width * scale) / 2 - bounds.left * scale, y: (rect.height - bounds.height * scale) / 2 - bounds.top * scale };
+      const hudTop = rect.height < 500 ? 48 : 68, dragBottom = rect.height < 500 ? 48 : 72;
+      const usableHeight = Math.max(80, rect.height - hudTop - dragBottom);
+      const scale = Math.min(rect.width / bounds.width, usableHeight / bounds.height);
+      const next = { width: rect.width, height: rect.height, scale, x: (rect.width - bounds.width * scale) / 2 - bounds.left * scale, y: hudTop + (usableHeight - bounds.height * scale) / 2 - bounds.top * scale };
       // Repeated visualViewport events need not cancel a gesture if mapping is unchanged.
       const changed = Math.abs(next.scale - this.view.scale) > .0001 || Math.abs(next.x - this.view.x) > .25 || Math.abs(next.y - this.view.y) > .25;
       if (changed && this.pointer) this.cancelPointer(this.pointer.id);
@@ -104,8 +122,7 @@
       document.body.classList.toggle('contact-tight', this.compact && rect.height < 300);
     }
     cameraBounds() {
-      if (!this.compact) return { left: 0, top: STADIUM_OFFSET, width: W, height: H - STADIUM_OFFSET };
-      // Frame the opportunity rather than shrinking the entire pitch onto a phone.
+      // Frame the opportunity on every screen, leaving the arena to fill the display.
       // Bounds are stable during play; they update at possession/state changes only.
       const actors = [this.player, ...this.mates, ...this.defenders];
       const xs = actors.map(p => p.startX), ys = actors.map(p => p.startY);
@@ -165,13 +182,14 @@
       this.player = this.makePlayer(...s.player, 'blue', 9); this.controlled = this.player;
       this.mates = s.mates.map((p, i) => this.makePlayer(...p, 'blue', 7 + i * 4));
       this.defenders = s.defenders.map((p, i) => this.makePlayer(...p, 'red', 4 + i));
-      this.keeper = { ...this.makePlayer(500, FIELD.top + GOAL.keeperOffset, 'keeper', 1), reaction: GOAL.keeperReaction, dive: 0, diveCooldown: 0, targetX: 500 };
+      const profile = this.keeperPlan[index], homeY = FIELD.top + (profile === 'advanced' ? 90 : GOAL.keeperOffset);
+      this.keeper = { ...this.makePlayer(500, homeY, 'keeper', 1), profile, homeY, reaction: GOAL.keeperReaction, dive: 0, diveCooldown: 0, targetX: 500 };
       this.ball = { ...this.possessionPosition(this.player), z: 0, vx: 0, vy: 0, vz: 0, spin: 0, rotation: 0, age: 0 };
       this.trail = []; this.particles = []; this.ripples = []; this.pointer = null; this.aim = null; this.contact = null; this.kick = null;
       this.pendingResult = null;
       this.resolution = null; this.flight = null; this.banner = null; this.netWobble = 0;
-      this.interceptTarget = null; this.interceptSuggested = { x: 500, y: 320 }; this.passCount = 0; this.motionTime = 0; this.shake = 0;
-      this.scenarioSnapshot = { ...this.stats }; this.mode = s.action;
+      this.interceptTarget = null; this.interceptSuggested = { x: 500, y: 320 }; this.motionTime = 0; this.shake = 0;
+      this.scenarioSnapshot = { ...this.stats };
     }
     transition(next) {
       this.cancelPointer(this.pointer?.id); this.state = next; this.stateTime = 0;
@@ -184,7 +202,7 @@
       $('contact-footer').classList.toggle('hidden', next !== State.BALL_CONTACT);
       if (next === State.BALL_CONTACT) {
         this.toastTime = 0; $('toast').classList.add('hidden');
-        $('contact-heading').querySelector('p').textContent = 'Tap the ball to choose your contact.';
+        $('contact-heading').querySelector('p').textContent = 'Tap a point on the ball';
       }
       // Contact and flight retain the aim camera; a new possession reframes the play.
       if ([State.HIGHLIGHT_INTRO, State.AIMING, State.INTERCEPTION].includes(next)) this.resize();
@@ -192,11 +210,17 @@
     }
     startSession() {
       if (![State.TITLE, State.SESSION_SUMMARY].includes(this.state)) return;
+      this.keeperPlan = this.createKeeperPlan();
       this.stats = { goals: 0, passes: 0, misses: 0, receives: 0 }; this.outcomes = []; this.index = 0; this.beginHighlight(); this.audio.play('tap');
+    }
+    createKeeperPlan(random = Math.random) {
+      const plan = ['advanced', 'advanced', 'line', 'line', 'line'];
+      for (let i = plan.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [plan[i], plan[j]] = [plan[j], plan[i]]; }
+      return plan;
     }
     beginHighlight() {
       this.loadActors(this.index); this.transition(State.HIGHLIGHT_INTRO);
-      this.toast(SCENARIOS[this.index].intro, 2.8);
+      this.toast(SCENARIOS[this.index].title.replace('.', '') + (this.keeper.profile === 'advanced' ? ' · Keeper off the line' : ''), 1.8);
     }
     restart() {
       this.stats = { ...this.scenarioSnapshot }; this.outcomes[this.index] = undefined; this.beginHighlight();
@@ -206,40 +230,22 @@
       if (this.index === 4) { this.showSummary(); return; }
       this.index++; this.beginHighlight();
     }
-    selectMode(mode) {
-      if (this.state !== State.AIMING || this.pointer) return;
-      this.mode = mode; this.aim = null; this.updatePower(0); this.updateUI(); this.audio.play('tap');
+    updateConditionsUI() {
+      const env = this.environment;
+      for (const input of $('conditions-dialog').querySelectorAll('input[type="radio"]')) input.checked = input.value === env[input.name];
+      $('conditions-summary').textContent = env.label;
+      $('conditions-icon').textContent = env.forecast.icon;
+      $('conditions-button').setAttribute('aria-label', `Change conditions: ${env.label}`);
     }
     updateUI() {
-      const s = SCENARIOS[this.index], enabled = this.state === State.AIMING;
       $('score').textContent = this.stats.goals;
-      $('chapter-number').innerHTML = `${String(this.index + 1).padStart(2, '0')} <span>/ 05</span>`;
-      $('scenario-title').textContent = s.title; $('scenario-tag').textContent = s.tag; $('scenario-description').textContent = s.description;
-      $('shoot-button').classList.toggle('selected', this.mode === 'SHOOT'); $('pass-button').classList.toggle('selected', this.mode === 'PASS');
-      for (const mode of ['SHOOT', 'PASS']) { const button = $(mode.toLowerCase() + '-button'); button.disabled = !enabled; button.setAttribute('aria-pressed', String(this.mode === mode)); }
+      $('chapter-number').textContent = `${this.index + 1}/${SCENARIOS.length}`;
       $('restart-button').disabled = [State.TITLE, State.SESSION_SUMMARY].includes(this.state);
-      const status = { TITLE: 'READY WHEN YOU ARE', HIGHLIGHT_INTRO: 'A MOMENT OF POSSIBILITY', AIMING: 'YOUR BALL. YOUR CALL.', BALL_CONTACT: 'FIND YOUR TOUCH', BALL_IN_MOTION: 'WATCH IT UNFOLD', INTERCEPTION: 'READ THE PASS', RESULT: 'MOMENT COMPLETE', SESSION_SUMMARY: 'THAT’S FULL TIME' };
-      $('match-status').textContent = status[this.state];
-      $('pitch-label').textContent = this.state === State.TITLE ? 'YOUR NEXT BIG MOMENT' : `HIGHLIGHT ${String(this.index + 1).padStart(2, '0')} / ${s.title.toUpperCase().replace('.', '')}`;
-      $('phase-label').textContent = this.state === State.BALL_CONTACT ? '02 — STRIKE' : this.state === State.INTERCEPTION ? '01 — MEET IT' : this.state === State.BALL_IN_MOTION ? '03 — IN PLAY' : '01 — AIM';
-      let coachTitle = 'Pull back. Let fly.', coachCopy = 'Drag back from the ball to aim. Release, then tap the big ball to add your finishing touch.', icon = '↙';
-      if (this.state === State.BALL_CONTACT) { coachTitle = 'It’s all in the contact.'; coachCopy = 'Center for a straight ball. Left or right for curve. Below center for loft. You have six seconds.'; icon = '◎'; }
-      else if (this.state === State.INTERCEPTION) { coachTitle = 'Be there before the ball.'; coachCopy = SCENARIOS[4].tip; icon = '⌖'; }
-      else if (this.state === State.BALL_IN_MOTION) { coachTitle = this.mode === 'PASS' ? 'Find your teammate.' : 'Let the ball do the talking.'; coachCopy = 'Watch the play unfold. Possession returns to you when a teammate receives your pass.'; icon = '↗'; }
-      else if (this.state === State.RESULT) { coachTitle = 'Another moment awaits.'; coachCopy = 'Keep going, or restart this highlight to try a different approach.'; icon = '→'; }
-      else if (this.state === State.AIMING) { coachCopy = s.tip; }
-      $('coach-title').textContent = coachTitle; $('coach-copy').textContent = coachCopy; $('coach-icon').textContent = icon;
-      $('bottom-hint').textContent = this.state === State.INTERCEPTION ? 'Tap the pitch to meet the incoming pass.' : this.state === State.AIMING ? 'Drag back from the ball. Release to choose your contact.' : this.state === State.BALL_CONTACT ? 'Your touch changes everything.' : 'A little instinct goes a long way.';
-      if (this.state === State.BALL_IN_MOTION && this.contact) {
-        const curve = this.contact.x < -.15 ? 'Rightward curve' : this.contact.x > .15 ? 'Leftward curve' : 'Straight contact';
-        const flight = this.contact.y > .25 ? 'lofted flight' : this.contact.y < -.2 ? 'low flight' : 'clean strike';
-        $('bottom-hint').textContent = `${curve} · ${flight}`;
-      }
-      [...$('chapter-progress').children].forEach((el, i) => { el.className = i === this.index ? 'current' : i < this.index ? 'done' : ''; });
-      [...$('scenario-list').children].forEach((el, i) => { el.className = 'moment' + (i === this.index ? ' active' : '') + (this.outcomes[i] === true ? ' complete' : this.outcomes[i] === false ? ' failed' : ''); el.querySelector('i').textContent = this.outcomes[i] === true ? '✓' : this.outcomes[i] === false ? '×' : i === this.index ? '↗' : '·'; });
+      $('bottom-hint').textContent = this.state === State.INTERCEPTION ? 'Tap the ring to receive.' : this.state === State.AIMING ? 'Drag back to aim. Release, then tap the ball.' : this.state === State.BALL_CONTACT ? 'Tap a point on the ball.' : '';
+      [...$('chapter-progress').children].forEach((el, i) => { el.className = i === this.index ? 'current' : this.outcomes[i] === true ? 'done' : this.outcomes[i] === false ? 'failed' : ''; });
       this.updateFlightUI();
     }
-    updatePower(power) { $('power-fill').style.width = `${Math.round(power * 100)}%`; $('power-value').textContent = power ? `${Math.round(power * 100)}%` : '—'; }
+    updatePower(power) { $('power-meter').classList.toggle('hidden', power <= 0); $('power-fill').style.width = `${Math.round(power * 100)}%`; $('power-value').textContent = power ? `${Math.round(power * 100)}%` : '—'; }
     toast(message, seconds = 2.2) { $('toast').textContent = message; $('toast').classList.remove('hidden'); this.toastTime = seconds; }
     onPointerDown(e) {
       if (e.button !== 0 || this.pointer || e.isPrimary === false) return;
@@ -272,7 +278,7 @@
         const finalAim = this.aim;
         this.releasePointer();
         if (!finalAim || finalAim.distance < Math.max(13, 7 / this.view.scale)) { this.aim = null; this.updatePower(0); return; }
-        this.kick = { dx: finalAim.dx, dy: finalAim.dy, power: Math.max(.16, finalAim.power), mode: this.mode };
+        this.kick = { dx: finalAim.dx, dy: finalAim.dy, power: Math.max(.16, finalAim.power) };
         this.aim = null; this.transition(State.BALL_CONTACT); this.audio.play('tap');
       } else if (this.state === State.BALL_CONTACT) {
         this.releasePointer(); const g = this.contactGeometry();
@@ -292,9 +298,9 @@
     kickVelocity(kick, contact) {
       const r = length(contact.x, contact.y), edge = Math.max(0, r - .78), accuracy = contact.timedOut ? .15 : edge * .18;
       const angle = Math.atan2(kick.dy, kick.dx) + (contact.timedOut ? .12 : contact.x * accuracy);
-      const speed = (kick.mode === 'SHOOT' ? 220 + kick.power * 530 : 155 + kick.power * 370) * (1 - edge * .2) * (contact.timedOut ? .68 : 1);
-      const loftPower = kick.mode === 'SHOOT' ? .65 + .7 * kick.power : 1;
-      const loft = Math.max(0, (kick.mode === 'SHOOT' ? 62 : 22) + contact.y * (kick.mode === 'SHOOT' ? 245 : 175));
+      const speed = (220 + kick.power * 530) * (1 - edge * .2) * (contact.timedOut ? .68 : 1);
+      const loftPower = .65 + .7 * kick.power;
+      const loft = Math.max(0, 62 + contact.y * 245);
       return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: loft * loftPower, spin: -contact.x * .82 };
     }
     executeKick() {
@@ -303,28 +309,28 @@
       Object.assign(this.ball, this.possessionPosition(this.controlled));
       // A short reaction delay keeps corner shots viable from the foot-level origin.
       this.motionTime = 0; this.trail = []; this.keeper.reaction = GOAL.keeperReaction; this.keeper.dive = 0; this.keeper.diveCooldown = 0;
-      this.mode = this.kick.mode; this.kicker = this.controlled; this.audio.play('kick');
+      this.kicker = this.controlled; this.audio.play('kick');
       this.flight = { maxHeight: 0, clearedKeeper: false };
-      this.shake = this.mode === 'SHOOT' && this.kick.power > .78 && !this.reducedMotion ? 5 : 0;
+      this.shake = this.kick.power > .78 && !this.reducedMotion ? 5 : 0;
       this.transition(State.BALL_IN_MOTION);
     }
     startInterception() {
       Object.assign(this.ball, { x: 200, y: 320, z: 0, vx: 215, vy: 0, vz: 0, spin: 0, age: 0 });
       this.controlled = this.player; this.interceptTarget = null; this.motionTime = 0; this.transition(State.INTERCEPTION);
-      this.toast('Tap the mint ring to meet the pass.', 2.3);
+      this.toast('Tap to receive', 1.8);
     }
     receive(player, offBall = false) {
       this.controlled = player; Object.assign(this.ball, this.possessionPosition(player));
       Object.assign(this.ball, { z: 0, vx: 0, vy: 0, vz: 0, spin: 0 }); this.trail = []; this.aim = null; this.contact = null; this.kick = null;
-      if (offBall) this.stats.receives++; else { this.stats.passes++; this.passCount++; }
-      this.mode = 'SHOOT'; this.transition(State.AIMING); this.updatePower(0); this.audio.play('tap');
+      if (offBall) this.stats.receives++; else this.stats.passes++;
+      this.transition(State.AIMING); this.updatePower(0); this.audio.play('tap');
       this.flight = null; this.updateFlightUI();
-      this.toast(offBall ? 'Beautifully read. Now find the finish.' : 'Pass complete. You control the receiver — take your shot!', 2.8);
+      this.toast(offBall ? 'Ball received' : 'Pass complete', 1.2);
     }
     finish(kind, detail) {
       if (this.pendingResult || [State.RESULT, State.SESSION_SUMMARY].includes(this.state)) return;
       const success = kind === 'goal'; this.outcomes[this.index] = success;
-      this.resolution = { kind, elapsed: 0, netHit: false, crossing: { x: this.ball.x, y: this.ball.y, z: this.ball.z } };
+      this.resolution = { kind, elapsed: 0, netHit: false, landing: null, crossing: { x: this.ball.x, y: this.ball.y, z: this.ball.z } };
       const chip = success && this.flight?.clearedKeeper;
       if (success) {
         this.stats.goals++; this.audio.play('goal'); this.celebrate(); this.flash = .2;
@@ -345,15 +351,16 @@
         const b = bMap[kind] || { text: 'CHANCE MISSED!', sub: 'KEEP YOUR HEAD UP', color: '#f48fb1' };
         this.banner = { ...b, time: 2.0, max: 2.0 };
       }
-      const titles = { goal: chip ? 'GOAL! Over the keeper.' : 'GOAL! Into the net.', save: 'Saved by the keeper.', blocked: 'Blocked by a defender.', intercepted: 'The pass is intercepted.', wide: 'Wide of the goal.', high: 'Over the crossbar.', bar: 'Off the crossbar!', post: 'Off the post!', weak: 'Not enough power.', lost: 'The chance is gone.' };
+      const titles = { goal: chip ? 'Over the keeper!' : 'GOAL!', save: 'Saved!', blocked: 'Blocked!', intercepted: 'Intercepted!', wide: 'Wide!', high: 'Over the crossbar.', bar: 'Crossbar!', post: 'Off the post!', weak: 'Too weak!', lost: 'Chance missed!' };
       $('result-title').textContent = titles[kind] || 'The chance slips away.';
       $('result-symbol').textContent = success ? '↗' : kind === 'save' ? '⊘' : '↘';
       $('result-symbol').style.color = success ? 'var(--mint)' : '#f4ae8f';
-      $('result-kicker').textContent = success ? 'GOAL / THAT’S YOUR MOMENT' : kind === 'save' ? 'SAVED / TRY A DIFFERENT CORNER' : 'CHANCE MISSED / KEEP YOUR HEAD UP';
+      $('result-kicker').textContent = `${this.index + 1}/${SCENARIOS.length}`;
       $('result-detail').textContent = success ? (chip ? 'Your chip cleared the goalkeeper and crossed below the bar.' : 'The ball crossed the goal line between the posts and below the bar.') : detail;
-      $('next-button').innerHTML = this.index === 4 ? 'See your performance <span>→</span>' : 'Next highlight <span>→</span>';
+      $('next-button').innerHTML = this.index === 4 ? 'RESULTS <span>→</span>' : 'NEXT <span>→</span>';
       // Leave the action visible before bringing up the result card.
-      this.pendingResult = { kind, wait: success ? 2.1 : kind === 'high' || kind === 'wide' ? 1.6 : 1.35 }; this.aim = null; this.updateUI(); this.updateFlightUI();
+      this.pendingResult = { kind, wait: success ? 2.1 : ['high', 'wide'].includes(kind) ? 2.4 : 1.35 };
+      this.aim = null; this.updateUI(); this.updateFlightUI();
     }
     celebrate() {
       const colors = ['#ffeb3b', '#e53935', '#1e88e5', '#ffffff', '#00e676', '#ff9100', '#d500f9'];
@@ -369,7 +376,7 @@
     showSummary() {
       const score = clamp(Math.round(this.stats.goals * 16 + Math.min(this.stats.passes, 3) * 4 + this.stats.receives * 8), 0, 100);
       $('rating').textContent = score; $('total-goals').textContent = this.stats.goals; $('total-passes').textContent = this.stats.passes; $('total-misses').textContent = this.stats.misses;
-      $('summary-title').textContent = score >= 75 ? 'You made it beautiful.' : score >= 40 ? 'Some moments of magic.' : 'The next moment is yours.';
+      $('summary-title').textContent = 'FULL TIME';
       $('summary-detail').textContent = score >= 75 ? 'Vision, touch, and a little nerve. A performance to remember.' : 'Every chance teaches you something. Go again and find your touch.';
       this.toastTime = 0; this.transition(State.SESSION_SUMMARY);
     }
@@ -378,6 +385,8 @@
       this.update(dt); this.render(); this.raf = requestAnimationFrame(this.frame);
     }
     update(dt) {
+      // Dialogs trap focus and pause simulation, including the contact countdown.
+      if ($('conditions-dialog').open || $('help-dialog').open) return;
       this.time += dt; this.stateTime += dt;
       if (this.toastTime > 0) { this.toastTime -= dt; if (this.toastTime <= 0) $('toast').classList.add('hidden'); }
       else $('toast').classList.add('hidden');
@@ -393,6 +402,7 @@
       for (const p of [this.player, ...this.mates]) p.celebration = Math.max(0, p.celebration - dt);
       if (this.pendingResult) {
         this.updateResolution(dt);
+        this.updateFlightUI();
         this.pendingResult.wait -= dt;
         if (this.pendingResult.wait <= 0) { this.pendingResult = null; this.transition(State.RESULT); } return;
       }
@@ -404,7 +414,7 @@
         else if (this.stateTime >= CONTACT_TIME) this.chooseContact(.32, .15, true);
       } else if (this.state === State.BALL_IN_MOTION || this.state === State.INTERCEPTION) {
         // Slow the presentation, including AI, around the goal without changing physics.
-        const motionDt = dt * (this.state === State.BALL_IN_MOTION && this.mode === 'SHOOT' ? (this.ball.y < 265 ? .42 : .72) : 1);
+        const motionDt = dt * (this.state === State.BALL_IN_MOTION ? (this.ball.y < 265 ? .42 : .72) : 1);
         this.motionTime += motionDt;
         const steps = Math.max(1, Math.ceil(motionDt / (1 / 120))), step = motionDt / steps;
         for (let i = 0; i < steps && !this.pendingResult; i++) {
@@ -415,9 +425,10 @@
       }
     }
     updateFlightUI() {
-      const active = this.state === State.BALL_IN_MOTION && !this.resolution;
+      const followingMiss = this.pendingResult && ['high', 'wide'].includes(this.resolution?.kind) && !this.resolution.exited && this.resolution.crossing.z >= 35;
+      const active = this.state === State.BALL_IN_MOTION && (!this.resolution || followingMiss);
       $('flight-meter').classList.toggle('hidden', !active);
-      if (this.resolution) {
+      if (this.resolution && !followingMiss) {
         const messages = { goal: this.flight?.clearedKeeper ? 'GOAL · OVER THE KEEPER, INTO THE NET' : 'GOAL · BELOW THE BAR, INTO THE NET', save: 'SAVED · THE KEEPER HAS IT', high: 'OVER THE BAR · GOAL KICK', wide: 'WIDE · GOAL KICK', bar: 'CROSSBAR · THE BALL COMES BACK OUT', post: 'OFF THE POST · NO GOAL', blocked: 'BLOCKED BY THE DEFENDER', intercepted: 'PASS INTERCEPTED', weak: 'THE BALL RUNS OUT OF PACE', lost: 'CHANCE MISSED' };
         $('bottom-hint').textContent = messages[this.resolution.kind]; return;
       }
@@ -425,7 +436,8 @@
       const b = this.ball, phase = b.z < 5 ? 'GROUND' : b.vz > 8 ? 'RISING' : b.vz < -8 ? 'DROPPING' : 'AT THE TOP';
       $('flight-height').style.width = `${clamp(b.z / FIELD.crossbar, 0, 1.25) * 80}%`;
       $('flight-label').textContent = b.z >= FIELD.crossbar ? 'ABOVE BAR' : phase;
-      $('bottom-hint').textContent = `${this.mode === 'PASS' ? 'PASS' : (this.flight?.maxHeight || 0) > 45 || b.vz > 140 ? 'CHIP SHOT' : 'SHOT'} · ${phase}`;
+      if (followingMiss && this.resolution.landing) $('flight-label').textContent = 'LANDED';
+      $('bottom-hint').textContent = followingMiss ? `${this.resolution.kind === 'high' ? 'OVER THE BAR' : 'WIDE'} · ${this.resolution.landing ? 'LANDED OUTSIDE' : phase}` : `${(this.flight?.maxHeight || 0) > 45 || b.vz > 140 ? 'LOFTED KICK' : 'KICK'} · ${phase}`;
     }
     updateResolution(dt) {
       const b = this.ball, r = this.resolution;
@@ -437,9 +449,15 @@
         b.x = lerp(b.x, this.keeper.x - Math.sin(angle) * handY, blend); b.y = lerp(b.y, this.keeper.y + Math.cos(angle) * handY, blend); b.z = lerp(b.z, 0, blend);
         b.vx = b.vy = b.vz = 0; this.keeper.dive = Math.max(0, this.keeper.dive - dt); return;
       }
-      const motionDt = dt * (r.kind === 'goal' ? .7 : .45), steps = Math.max(1, Math.ceil(motionDt * 120));
+      const airborneMiss = ['high', 'wide'].includes(r.kind) && r.crossing.z > 0;
+      const motionDt = dt * (r.kind === 'goal' ? .7 : airborneMiss ? MISS_PLAYBACK : .45), steps = Math.max(1, Math.ceil(motionDt * 120));
       for (let i = 0; i < steps; i++) {
-        this.integrateBall(b, motionDt / steps, false);
+        const previousZ = b.z;
+        this.integrateBall(b, motionDt / steps);
+        if (airborneMiss && !r.landing && previousZ > 0 && b.z === 0) {
+          r.landing = { x: b.x, y: b.y };
+          this.pendingResult.wait = .5;
+        }
         if (r.kind === 'goal') {
           const back = FIELD.top - GOAL.depth + 3;
           if (b.y < back) {
@@ -452,17 +470,25 @@
           b.vx *= Math.exp(-2 * motionDt / steps); b.vy *= Math.exp(-2 * motionDt / steps);
         }
       }
+      if (['high', 'wide'].includes(r.kind) && !r.exited) {
+        const v = this.view, radius = this.ballGeometry(b).radius * v.scale;
+        const x = v.x + b.x * v.scale, y = v.y + (b.y - b.z * HEIGHT_PROJECTION) * v.scale;
+        if (x + radius < 0 || x - radius > v.width || y + radius < 0 || y - radius > v.height) {
+          r.exited = true;
+          this.pendingResult.wait = Math.min(this.pendingResult.wait, Math.max(.45, .95 - r.elapsed));
+        }
+      }
       this.trail.push({ x: b.x, y: b.y, z: b.z, age: 0 }); if (this.trail.length > 70) this.trail.shift();
       this.trail.forEach(p => p.age += dt);
     }
-    integrateBall(ball, dt, pass = false) {
+    integrateBall(ball, dt) {
       const speed = length(ball.vx, ball.vy), spin = ball.spin;
       const ax = -ball.vy * spin * .80, ay = ball.vx * spin * .80;
       ball.vx += ax * dt; ball.vy += ay * dt;
-      const friction = ball.z > 1 ? .10 : pass ? .74 : .49;
+      const friction = ball.z > 1 ? .10 : .49;
       const decay = Math.exp(-friction * dt); ball.vx *= decay; ball.vy *= decay;
       ball.x += ball.vx * dt; ball.y += ball.vy * dt;
-      if (ball.z > 0 || ball.vz > 0) { ball.vz -= 260 * dt; ball.z += ball.vz * dt; if (ball.z < 0) { ball.z = 0; ball.vz = Math.abs(ball.vz) > 65 ? -ball.vz * .23 : 0; } }
+      if (ball.z > 0 || ball.vz > 0) { ball.vz -= BALL_GRAVITY * dt; ball.z += ball.vz * dt; if (ball.z < 0) { ball.z = 0; ball.vz = Math.abs(ball.vz) > 65 ? -ball.vz * .23 : 0; } }
       ball.spin *= Math.exp(-dt * .23); ball.rotation += speed * dt * .045 + spin * dt * 4; ball.age += dt;
     }
     movePlayer(p, tx, ty, speed, dt) {
@@ -477,7 +503,9 @@
       const danger = b.y < 255 && b.vy < -50;
       if (danger && !k.diveCooldown && Math.abs(b.x - k.x) > 22) { k.dive = .42; k.diveCooldown = 1.1; k.diveDirection = Math.sign(b.x - k.x); }
       k.dive = Math.max(0, k.dive - dt);
-      this.movePlayer(k, k.targetX, FIELD.top + GOAL.keeperOffset, k.dive > 0 ? 185 : 105, dt);
+      const retreat = k.profile === 'advanced' && b.vy < -50 && b.y < k.y + 65 && b.z > 25;
+      const targetY = retreat ? FIELD.top + GOAL.keeperOffset : k.homeY;
+      this.movePlayer(k, k.targetX, targetY, retreat ? 65 : k.dive > 0 ? 185 : 105, dt);
     }
     updateAI(dt) {
       this.updateKeeper(dt); const b = this.ball;
@@ -486,22 +514,20 @@
         const tx = react && near ? b.x + b.vx * .13 : d.startX, ty = react && near ? b.y + b.vy * .13 : d.startY;
         this.movePlayer(d, clamp(tx, 100, 900), clamp(ty, 132, 630), react && near ? 84 : 22, dt);
       }
-      if (this.mode === 'PASS') {
-        let receiver = null, best = Infinity;
-        for (const p of [this.player, ...this.mates]) {
-          if (p === this.kicker) continue;
-          const score = distance(p, { x: b.x + b.vx * .38, y: b.y + b.vy * .38 });
-          if (score < best) { best = score; receiver = p; }
-        }
-        for (const p of [this.player, ...this.mates]) {
-          if (p === this.kicker) continue;
-          if (p === receiver && best < 365) {
-            // Run onto a pass and attack its landing point, including a lofted through ball.
-            const lookAhead = clamp(distance(p, b) / 260, .08, .5);
-            this.movePlayer(p, clamp(b.x + b.vx * lookAhead, 100, 900), clamp(b.y + b.vy * lookAhead, 135, 650), 132, dt);
-          } else this.movePlayer(p, p.startX, p.startY - 28, 65, dt);
-        }
-      } else for (const p of this.mates) { if (p !== this.controlled) this.movePlayer(p, p.startX, p.startY - 35, 55, dt); }
+      let receiver = null, best = Infinity;
+      for (const p of [this.player, ...this.mates]) {
+        if (p === this.kicker) continue;
+        const score = distance(p, { x: b.x + b.vx * .38, y: b.y + b.vy * .38 });
+        if (score < best) { best = score; receiver = p; }
+      }
+      for (const p of [this.player, ...this.mates]) {
+        if (p === this.kicker) continue;
+        if (p === receiver && best < 365) {
+          // Run onto a pass and attack its landing point, including a lofted through ball.
+          const lookAhead = clamp(distance(p, b) / 260, .08, .5);
+          this.movePlayer(p, clamp(b.x + b.vx * lookAhead, 100, 900), clamp(b.y + b.vy * lookAhead, 135, 650), 132, dt);
+        } else this.movePlayer(p, p.startX, p.startY - 28, 65, dt);
+      }
     }
     goalLineOutcome(x, z) {
       // Airborne enlargement is a readability effect, not a larger collision sphere.
@@ -520,11 +546,12 @@
       return height > barHeight + contactRadius && x > FIELD.goalLeft && x < FIELD.goalRight ? 'high' : 'wide';
     }
     updateMotion(dt) {
-      this.updateAI(dt); const b = this.ball, previous = { x: b.x, y: b.y, z: b.z }; this.integrateBall(b, dt, this.mode === 'PASS');
+      const previousKeeperPlane = this.keeper.y - 7;
+      this.updateAI(dt); const b = this.ball, previous = { x: b.x, y: b.y, z: b.z }; this.integrateBall(b, dt);
       if (this.flight) {
         this.flight.maxHeight = Math.max(this.flight.maxHeight, b.z);
         const plane = this.keeper.y - 7;
-        if (previous.y >= plane && b.y < plane && b.z - this.ballGeometry(b).radius / HEIGHT_PROJECTION > GOAL.keeperReach && Math.abs(b.x - this.keeper.x) < 60) this.flight.clearedKeeper = true;
+        if (previous.y >= previousKeeperPlane && b.y < plane && b.z - this.ballGeometry(b).radius / HEIGHT_PROJECTION > GOAL.keeperReach && Math.abs(b.x - this.keeper.x) < 60) this.flight.clearedKeeper = true;
       }
       if (b.age > .035) { this.trail.push({ x: b.x, y: b.y, z: b.z, age: 0 }); if (this.trail.length > 70) this.trail.shift(); }
       this.trail.forEach(t => t.age += dt);
@@ -549,15 +576,15 @@
         }
       }
       if (b.age > .14 && b.z < 26) {
-        for (const d of this.defenders) if (length(b.x - d.x, b.y - (d.y - 7)) < 22) { this.ball.vx *= .12; this.ball.vy *= .12; this.finish(this.mode === 'PASS' ? 'intercepted' : 'blocked', this.mode === 'PASS' ? 'A defender stepped into the passing lane. Look for the open teammate.' : 'A red shirt gets in the way. A pass or a little loft could open the angle.'); return; }
+        for (const d of this.defenders) if (length(b.x - d.x, b.y - (d.y - 7)) < 22) { this.ball.vx *= .12; this.ball.vy *= .12; this.finish('blocked', 'A defender got to the ball first. Try another angle or a little loft.'); return; }
       }
-      if (this.mode === 'PASS' && b.age > .16 && b.z < 24) {
+      if (b.age > .16 && b.z < 24) {
         for (const p of [this.player, ...this.mates]) if (p !== this.kicker && distance(p, b) < 31) {
-          if (this.passCount >= 3) { this.mode = 'SHOOT'; this.toast('Time to finish. Take your shot!', 2); } this.receive(p); return;
+          this.receive(p); return;
         }
       }
       if ((length(b.vx, b.vy) < 38 && b.z < 3 && b.age > .7) || this.motionTime > 6) {
-        this.finish('weak', this.mode === 'PASS' ? 'The pass ran out of room. Aim closer to your teammate and use a firm touch.' : 'The ball runs out of pace. Pull back farther to add power.');
+        this.finish('weak', 'The ball runs out of pace. Pull back farther to add power.');
       }
     }
     updateInterception(dt) {
@@ -597,6 +624,7 @@
         c.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * .7);
         c.restore();
       }
+      this.environment.drawAtmosphere(c, this.time, this.reducedMotion, v);
       if (this.state === State.AIMING && !this.aim) this.drawPossessionHint(c);
       if (this.state === State.BALL_CONTACT) this.drawContact(c);
       if (this.flash > 0 && !this.reducedMotion) { c.fillStyle = `rgba(255,255,255,${this.flash * .4})`; c.fillRect(0, 0, W, H); }
@@ -608,16 +636,14 @@
     }
     drawCrossingMarker(c) {
       const r = this.resolution;
-      if (!r || !['goal', 'high', 'bar', 'post'].includes(r.kind) || r.elapsed > 1.2) return;
-      const scale = this.view.scale, p = r.crossing, color = r.kind === 'goal' ? '#d0f69a' : r.kind === 'high' ? '#ff8e83' : '#ffca70';
+      if (!r || !['goal', 'bar', 'post'].includes(r.kind) || r.elapsed > 1.2) return;
+      const scale = this.view.scale, p = r.crossing, color = r.kind === 'goal' ? '#d0f69a' : '#ffca70';
       c.save(); c.translate(p.x, p.y - p.z * HEIGHT_PROJECTION);
       c.globalAlpha = clamp(1.4 - r.elapsed, 0, .9); c.strokeStyle = color; c.lineWidth = 2 / scale;
       c.beginPath(); c.arc(0, 0, (10 + Math.min(r.elapsed, .4) * 12) / scale, 0, Math.PI * 2); c.stroke();
-      c.fillStyle = color; c.font = `bold ${12 / scale}px Arial`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(r.kind === 'goal' ? '✓' : r.kind === 'high' ? '↑' : '×', 0, 0); c.restore();
+      c.fillStyle = color; c.font = `bold ${12 / scale}px Arial`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(r.kind === 'goal' ? '✓' : '×', 0, 0); c.restore();
     }
-    drawPitch(c) {
-      c.fillStyle = '#142b1a'; c.fillRect(-1000, -1000, 3000, 3000);
-
+    drawStadium(c) {
       // --- Retro Tribün / Taraftarlar (New Star Soccer Crowd) ---
       c.save(); c.translate(0, STADIUM_OFFSET);
       c.fillStyle = '#1e3324'; c.fillRect(70, 6, 860, 10);
@@ -666,21 +692,21 @@
         c.fillStyle = ((y / 60) % 2) ? '#1e88e5' : '#43a047'; c.fillRect(930, y, 16, 24);
       }
 
-      // --- Canlı Çim Şeritleri (NSS Mown Pitch) ---
-      for (let i = 0; i < 10; i++) {
-        c.fillStyle = i % 2 ? '#3ca240' : '#339137';
-        c.fillRect(FIELD.left, FIELD.top + i * 60, 848, 60);
-      }
-      // Dither piksel çim dokusu
-      c.fillStyle = 'rgba(255,255,255,0.035)';
-      for (let i = 0; i < 160; i++) { const x = 83 + (i * 137) % 830, y = 90 + (i * 97) % 585; c.fillRect(x, y, 2, 4); }
+    }
+    drawPitch(c) {
+      const env = this.environment;
+      c.fillStyle = env.palette.outside; c.fillRect(-4000, -4000, 8000, 8000);
+      env.drawRunoff(c);
+      if (env.pitch === 'stadium') this.drawStadium(c);
+      else env.drawSurroundings(c, BACKDROP_SHIFT);
+      env.drawSurface(c);
 
       // --- Saha Çizgileri (Parlak Tebeşir) ---
-      c.strokeStyle = '#ffffff'; c.lineWidth = 2.5; c.strokeRect(76, 84, 848, 600);
+      c.strokeStyle = env.palette.line; c.lineWidth = 2.5; c.strokeRect(76, 84, 848, 600);
       c.strokeRect(280, 84, 440, 180); // Ceza sahası
       c.strokeRect(386, 84, 228, 68);  // Altıpas
       c.beginPath(); c.arc(500, 210, 88, .65, Math.PI - .65); c.stroke(); // Ceza yayı
-      c.beginPath(); c.arc(500, 210, 3.5, 0, Math.PI * 2); c.fillStyle = '#ffffff'; c.fill(); // Penaltı noktası
+      c.beginPath(); c.arc(500, 210, 3.5, 0, Math.PI * 2); c.fillStyle = env.palette.line; c.fill(); // Penaltı noktası
       c.beginPath(); c.moveTo(76, 619); c.lineTo(924, 619); c.stroke(); // Orta saha çizgisi
       c.beginPath(); c.arc(500, 619, 95, 0, Math.PI * 2); c.stroke(); // Orta saha dairesi
       c.beginPath(); c.arc(500, 619, 3.5, 0, Math.PI * 2); c.fill();
@@ -688,7 +714,7 @@
 
       // Köşe bayrakları (rüzgarda hafif sallanan üçgen bayrak)
       const flagWave = Math.sin(this.time * 6) * 3;
-      for (const x of [76, 924]) {
+      for (const x of env.pitch === 'street' ? [] : [76, 924]) {
         c.strokeStyle = '#cfd8dc'; c.lineWidth = 2; c.beginPath(); c.moveTo(x, 82); c.lineTo(x, 60); c.stroke();
         c.fillStyle = '#ffeb3b'; c.beginPath();
         c.moveTo(x, 60); c.lineTo(x + (x === 76 ? 13 : -13) + flagWave, 65); c.lineTo(x, 71); c.fill();
@@ -750,7 +776,7 @@
         c.fillStyle = '#ffff00'; c.font = `900 ${Math.max(12, 11 / this.view.scale)}px Impact, sans-serif`; c.textAlign = 'center'; c.fillText('MEET THE PASS', t.x, t.y - 42);
         if (this.interceptTarget) { c.strokeStyle = '#76ff03'; c.setLineDash([4, 4]); c.beginPath(); c.moveTo(this.player.x, this.player.y); c.lineTo(this.interceptTarget.x, this.interceptTarget.y); c.stroke(); }
         c.restore();
-      } else if (this.mode === 'PASS' && this.state === State.AIMING) {
+      } else if (this.state === State.AIMING) {
         for (const p of [this.player, ...this.mates]) if (p !== this.controlled) {
           const tx = this.index === 2 ? p.x - 22 : p.x, ty = this.index === 2 ? p.y - 67 : p.y - 14;
           c.save(); c.strokeStyle = '#00e676'; c.lineWidth = 2; c.setLineDash([4, 5]); c.beginPath(); c.arc(tx, ty, 28, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
@@ -944,7 +970,7 @@
       c.save(); c.lineCap = 'round';
       for (let i = 1; i < this.trail.length; i++) {
         const a = this.trail[i - 1], b = this.trail[i], alpha = (i / this.trail.length) * .4 * Math.max(0, 1 - b.age / 1.4);
-        c.strokeStyle = this.mode === 'PASS' ? `rgba(180,238,255,${alpha * 1.6})` : `rgba(255,255,235,${alpha * 1.8})`;
+        c.strokeStyle = `rgba(255,255,235,${alpha * 1.8})`;
         // A trail must not be wider than the small on-field ball it follows.
         c.lineWidth = this.ballGeometry(b).groundRadius * (.18 + i / this.trail.length * .55);
         c.beginPath(); c.moveTo(a.x, a.y - a.z * HEIGHT_PROJECTION); c.lineTo(b.x, b.y - b.z * HEIGHT_PROJECTION); c.stroke();
@@ -1066,7 +1092,7 @@
       c.restore(); // rotate/translate restore
 
       // 3. Okun İlerisindeki Hafif Yörünge İzi (Hedefe doğru kesik hat)
-      const preview = { ...this.ball, ...this.kickVelocity({ dx: a.dx, dy: a.dy, power: Math.max(.16, a.power), mode: this.mode }, { x: 0, y: 0, timedOut: false }) };
+      const preview = { ...this.ball, ...this.kickVelocity({ dx: a.dx, dy: a.dy, power: Math.max(.16, a.power) }, { x: 0, y: 0, timedOut: false }) };
       c.strokeStyle = p > 0.8 ? 'rgba(255, 23, 68, 0.55)' : 'rgba(255, 235, 59, 0.55)';
       c.lineWidth = 2;
       c.setLineDash([4, 6]);
@@ -1075,7 +1101,7 @@
       const leadY = by + a.dy * (totalLen + 18);
       c.moveTo(leadX, leadY);
       for (let i = 0; i < 28; i++) {
-        this.integrateBall(preview, .034, this.mode === 'PASS');
+        this.integrateBall(preview, .034);
         if (i > 4) {
           c.lineTo(preview.x, preview.y - preview.z * HEIGHT_PROJECTION);
         }
@@ -1117,7 +1143,6 @@
     drawPossessionHint(c) {
       const b = this.ball, pulse = 1 + Math.sin(this.time * 4) * .09;
       c.save(); c.strokeStyle = '#ffeb3b88'; c.lineWidth = 2; c.beginPath(); c.arc(b.x, b.y, 35 * pulse, 0, Math.PI * 2); c.stroke();
-      c.font = `900 ${Math.max(11, 11 / this.view.scale)}px Impact, sans-serif`; c.textAlign = 'center'; c.fillStyle = '#ffea00'; c.fillText('DRAG BACK TO AIM', b.x, b.y + 57);
       c.strokeStyle = '#ffeb3b'; c.lineWidth = 2; c.beginPath(); c.moveTo(b.x, b.y + 69); c.lineTo(b.x, b.y + 86); c.lineTo(b.x - 4, b.y + 82); c.moveTo(b.x, b.y + 86); c.lineTo(b.x + 4, b.y + 82); c.stroke(); c.restore();
     }
     drawContact(c) {
@@ -1157,13 +1182,6 @@
       // Sweet Spot Merkezi
       c.strokeStyle = 'rgba(255,235,59,0.5)'; c.lineWidth = 1.5;
       c.beginPath(); c.arc(0, 0, r * 0.18, 0, Math.PI * 2); c.stroke();
-
-      // Yön Kılavuzları (NSS Stili)
-      c.font = 'bold 11px sans-serif'; c.fillStyle = '#ffeb3b'; c.textAlign = 'center';
-      if (!this.compact) {
-        c.fillText('◄ CURVE LEFT', -r - 60, 5); c.fillText('CURVE RIGHT ►', r + 60, 5);
-        c.fillText('▲ LIFT / LOFT', 0, r + 44); c.fillText('▼ LOW DRIVE', 0, -r - 26);
-      }
 
       // Kırmızı Hedef Dürbünü (Target Reticle)
       if (this.contact) {

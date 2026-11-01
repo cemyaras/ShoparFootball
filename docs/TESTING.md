@@ -8,6 +8,7 @@ From the repository root, with Node.js installed:
 
 ```bash
 node --check src/js/game.js
+node --check src/js/environment.js
 node --test tests/game.test.cjs
 git diff --check
 ```
@@ -39,7 +40,7 @@ python3 -m http.server 8000
 | One on one | A strong corner shot can score; a central shot can be saved; an inaccurate shot can miss. |
 | From distance | Powerful shots reach the goal; poor power or excessive loft can lose the chance. |
 | The through ball | A pass toward the run marker can be received; control then transfers to the receiver for the next action. |
-| Two against two | Both action modes work; teammates can receive and return a pass; defenders can intercept passes and block shots. |
+| Two against two | Aim freely toward goal or teammates; teammates can receive and return a pass; defenders can intercept passes and block shots. |
 | Read the game | An early tap near the marked space can meet the pass; poor positioning or no input loses the chance. |
 
 ## Player, ball, and goal proportions
@@ -64,12 +65,14 @@ Watch each case at normal playback speed on a desktop and a portrait/landscape p
 | Firm corner shot with central contact | Ground shadow stays close to the ball; it crosses below the bar, hits the net, rebounds gently, and settles inside. |
 | Central shot with central contact | The ball collides with the keeper, moves into their hands, and stays there. |
 | Central shot, full power, contact about 60% below center | The ball separates from its shadow, clears the keeper, fits under the bar, and drops into the net. |
-| Central shot, full power, contact at the bottom edge | The entire ball clears the crossbar, continues behind the goal, and the score stays unchanged. |
+| Central shot, full power, contact at the bottom edge | The entire ball clears the crossbar and exits the frame; the goal and camera stay fixed, the score stays unchanged, and the result follows promptly. |
 | Central shot, full power, contact about 75% below center | The ball grazes the crossbar and rebounds out; it must not be credited as a goal. |
 | Shot aimed directly at an upright | The ball rebounds off the post and is reported as a frame hit. |
 | Shot outside the posts | The ball continues wide; it must not hit or disturb the net. |
 
-During flight, the **HEIGHT** meter must distinguish rising and dropping and show the crossbar marker. Outcome banners must fit within the Canvas at every zoom/viewport and leave the goal visible. An airborne ball above the bar must be drawn in front of the frame, while a scored ball remains behind it. Restart must clear the old banner, net motion, and crossing marker.
+During flight, the **HEIGHT** meter must distinguish rising and dropping and show the crossbar marker. Outcome banners must fit within the Canvas at every zoom/viewport and leave the active ball visible. An airborne ball above the bar must be drawn in front of the frame, while a scored ball remains behind it. Restart must clear the old banner, net motion, and crossing marker.
+
+For high misses, compare full power with 85%, 90%, and 100% below-center contact, and compare full bottom contact at 65%, 80%, and 100% power. The trajectory must vary without a stationary impact marker at the goal line. On desktop, portrait, and short landscape screens, the camera must stay fixed and the entire goal must remain visible. The ball should leave the frame without rebounding, then the result should appear within 2.5 seconds of the goal-line crossing. Verify that the apron is short and the full stands/wall/trees remain behind it in all three venues. There must be no long central corridor or camera journey after the ball.
 
 Test full-power bottom contact with left, central, and right aim directions: these strongly lofted shots must be able to go out without rebounding. Also check shots just outside both upper goal corners. The frame uses finite rounded segments; there must be no rectangular collision area above or beside a post. Cosmetic growth of an airborne ball must not enlarge its collision radius.
 
@@ -81,6 +84,26 @@ Test full-power bottom contact with left, central, and right aim directions: the
 - Restart during the brief goal or save animation. The previous result must not interrupt the restarted highlight.
 - Use **Play Again** and confirm that the session restarts at highlight one with empty statistics.
 - Toggle audio and verify that the game also works with sound disabled.
+
+## Goalkeeper positions
+
+- Start a full session and confirm two highlights have a keeper visibly off the line and three have a deeper keeper. **Play Again** selects a fresh arrangement.
+- Restart an advanced-keeper highlight: the same starting position must return. Receiving or returning a pass must not snap the keeper to the goal line.
+- Shoot low and centrally at an advanced keeper: they should still be able to save. Shoot toward the corner and verify ordinary goals remain possible.
+- Try a soft chip over the exposed keeper. In the one-on-one fixture, 16% power with contact around 87% below center clears the advanced keeper and drops into the net; the same kick can be saved by the deeper keeper.
+- Watch the advanced keeper react to a chip: they should backpedal gradually, with no jump to a new position. The ball must genuinely clear them before the chip-goal message appears.
+
+## Venues and weather
+
+- Open **Match settings** with the weather icon from both the title screen and during play. Try every combination of Stadium, Street, and Dirt with Sunny, Cloudy, Rain, and Snow.
+- Confirm distinct surfaces and surroundings: stadium stripes/stands, street asphalt/fencing/buildings, and worn dirt/trees/benches. Rain should show puddles and streaks; snow should show patches and flakes. The goal and ball must remain readable.
+- Switch conditions while aiming, during contact selection, while the ball is moving, and after a result. The score and highlight must survive; the match and contact timer must pause while the dialog is open.
+- Open the menu during a captured drag. Closing it must leave aiming available without committing a shot.
+- Close with the close button, **DONE**, and Escape. Keyboard focus should return to the weather/settings button. Check radio choices with Tab and arrow keys.
+- Reload and verify restored choices. Check corrupt and unavailable storage; the game must still start and allow changes.
+- At 320 × 480 and 568 × 320, scroll the dialog with touch and reach every choice, the sound toggle, and the close/done controls. Confirm no horizontal overflow.
+- Enable reduced motion: rain and snow should remain static while selections and gameplay continue to work.
+- Compare goals, saves, frame hits, and clear misses across environments; atmospheric effects must not change shot physics.
 
 ## Responsive checks
 
@@ -98,13 +121,36 @@ Use browser device emulation for a quick pass, followed by physical devices when
 | 1024 × 768 | Tablet landscape |
 | 1280 × 900 | Desktop |
 
-Check for horizontal overflow, clipped overlays, and overlapping contact controls. During play, the ball, action buttons, and power display should remain usable. Confirm that the backing Canvas stays sharp on high-DPI displays and that resizing preserves correct pointer mapping.
+Check for horizontal overflow, clipped overlays, and overlapping contact controls. During play, the ball must remain draggable and the power indicator must appear only during a drag. Confirm that the backing Canvas stays sharp on high-DPI displays and that resizing preserves correct pointer mapping.
 
 Dragging on the pitch should not scroll or zoom the page. Touch targets must work without hover, a keyboard, or multi-touch.
 
 Rotate the device during an unfinished drag and confirm that it cancels without firing. Start a fresh drag after rotation and verify the preview and contact tap still line up. Repeat with the browser toolbar expanded and collapsed. Check that the contact ball stays between its heading and timer and that the session summary and replay button fit in both orientations.
 
+## Game interface
+
+- Confirm the arena fills the viewport without a page heading, sidebar, footer, coaching card, or scenario list.
+- Check the top score, chance counter, restart, and settings controls for overlap at 320 × 480 through 1920 × 1080.
+- Check all five scenarios: no shoot/pass buttons or fixed bottom dock should appear. The power indicator should appear while dragging and disappear after release or cancellation.
+- Open **?** from the title screen and during contact selection. Verify pause/resume and both close controls. The big contact ball must fit between its heading and timer.
+- In settings, change venue/weather and toggle sound. Confirm these remain usable without a permanent toolbar or side panel.
+- Play a complete five-highlight session with native touch, including passes and off-ball reception. Check result/summary/replay buttons on short portrait and landscape screens.
+
 ## Validation history
+
+The unified-kick update passed 33 regression tests. Pass/return-pass tests now use the same kick helper as goals, with no mode parameter. Additional cases verify a direct goal in a combination highlight and a received pass in a long-shot highlight, preventing hidden scenario-specific action restrictions. A complete native-touch session passed through goals, a through pass, a return pass, off-ball reception, summary, and replay with no action-selection clicks; desktop mouse flow also resolved. UI checks at 320 × 480, 568 × 320, and 1280 × 900 confirmed that the selector/dock are absent and power appears only while dragging. No runtime errors occurred.
+
+The game-interface update passed 31 regression tests and Chrome layout checks at 320 × 480, 390 × 844, 568 × 320, 844 × 390, 768 × 1024, 1280 × 900, and 1920 × 1080. Each layout covered all five scenarios, contact bounds, HUD separation, result/summary buttons, and page overflow. A complete native-touch session passed through receiving, returning passes, interception, results, summary, and replay; desktop mouse flow also resolved. Native help/settings/sound and contact pause/resume checks passed on four viewport sizes, with no runtime exceptions. Desktop, portrait, landscape, contact, help, and summary screenshots were inspected.
+
+Keeper-position validation passed 31 automated tests, including the two/three profile mix, restart/pass stability, gradual backpedaling, ordinary saves, and a chip that scores against an advanced keeper while the same kick is saved near the line. Four normal-speed Chrome cases with native mouse/touch input passed at 390 × 844, 568 × 320, and 1280 × 900: exposed-keeper chip goal, deeper-keeper save of that chip, exposed-keeper ground save, and corner goal. Starting positions and chip clearance were visually inspected; restart restored each position and no runtime errors occurred.
+
+The bounded-arena correction removed the long miss-follow camera and 2,400-unit rear corridor. The 26-test suite checks fixed framing and goal visibility across desktop, portrait, and short landscape sizes, clean ball exit without a rebound, prompt results, and the absence of a false impact marker.
+
+Six normal-speed Chrome checks passed with native mouse/touch input at 390 × 844, 568 × 320, and 1280 × 900: full-power high, lower-power high, landscape high, chip goal, real crossbar hit, and desktop high. They covered stadium, street/rain, and dirt/snow. During each high miss, camera scale/offset stayed fixed and the goal remained visible; the ball exited before the result appeared, within 2.5 seconds of crossing. Recorded approach/exit frames were inspected to confirm the complete backdrop and short rear apron. No runtime errors occurred.
+
+Venue/weather validation covered all 12 combinations in Chrome, persisted choices after reload, and verified contact-timer pausing, Escape dismissal, and restored keyboard focus. The dialog passed mouse/touch checks at 320 × 480, 390 × 844, 844 × 390, 568 × 320, 768 × 1024, and 1280 × 900, including native touch scrolling on short screens. The 23 automated tests also passed, including unchanged goal/miss outcomes across all environments and recovery from corrupt or denied storage.
+
+Direct-file loading was additionally verified with native touch at 390 × 844: a street/rain corner shot scored, and a dirt/snow full-power loft continued over the bar. Both kicks paused and resumed through the conditions dialog during contact selection. Reduced-motion initialization and runtime error checks passed.
 
 The frame-collision fix was checked in Chrome at 390 × 844 with native touch emulation and normal-speed playback: full-power bottom contact went over the bar, left and right misses continued outside, and a chip goal, ground goal, and actual crossbar hit retained their expected outcomes. All six cases passed without runtime exceptions. The 19 regression tests also passed, including near-corner misses at 320, 768, and 1440 pixels and full-power loft across five aim directions.
 
