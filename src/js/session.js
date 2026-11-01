@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const { clamp } = window.ShoparFootball.Core;
-  const freshStats = () => ({ goals: 0, passes: 0, misses: 0, receives: 0, tackles: 0 });
+  const freshStats = () => ({ goals: 0, passes: 0, misses: 0, receives: 0, tackles: 0, saves: 0 });
   class Session {
     constructor(definitions) {
       this.highlightMemory = new Map();
@@ -36,7 +36,7 @@
       return profiles;
     }
     rating() {
-      return clamp(Math.round((this.stats.goals + this.stats.tackles) * (84 / this.definitions.length) + Math.min(this.stats.passes, 3) * 3 + this.stats.receives * 7), 0, 100);
+      return clamp(Math.round((this.stats.goals + this.stats.tackles + (this.stats.saves || 0)) * (84 / this.definitions.length) + Math.min(this.stats.passes, 3) * 3 + this.stats.receives * 7), 0, 100);
     }
   }
   window.ShoparFootball.Session = Session;

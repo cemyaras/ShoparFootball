@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#142b1a">
-  <meta name="description" content="Shopar Football. Seven chances, one match. Play with one finger or a mouse.">
+  <meta name="description" content="Shopar Football. Eight chances, one match. Play with one finger or a mouse.">
   <title>Shopar Football</title>
   <link rel="stylesheet" href="./src/css/style.css">
   <script src="./src/js/core.js" defer></script>
@@ -16,6 +16,7 @@
   <script src="./src/js/highlights/reception.js" defer></script>
   <script src="./src/js/highlights/cut-pass.js" defer></script>
   <script src="./src/js/highlights/win-ball.js" defer></script>
+  <script src="./src/js/highlights/penalty-save.js" defer></script>
   <script src="./src/js/highlights/registry.js" defer></script>
   <script src="./src/js/highlights/outcomes.js" defer></script>
   <script src="./src/js/highlights/catalog.js" defer></script>
@@ -34,15 +35,15 @@
       <div class="canvas-wrap" id="canvas-wrap">
         <canvas id="game" aria-label="Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike." tabindex="0"></canvas>
         <header class="game-hud">
-          <button class="chance-indicator" id="highlight-button" type="button" aria-label="Choose highlight" title="Choose highlight" aria-haspopup="dialog" aria-controls="highlight-dialog"><span id="chapter-number">1/7</span><span class="chapter-progress" id="chapter-progress"><i class="current"></i><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
+          <button class="chance-indicator" id="highlight-button" type="button" aria-label="Choose highlight" title="Choose highlight" aria-haspopup="dialog" aria-controls="highlight-dialog"><span id="chapter-number">1/8</span><span class="chapter-progress" id="chapter-progress"><i class="current"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></button>
           <div class="scoreboard" aria-label="Score"><span class="team-blue">SFC</span><strong id="score">0</strong><span class="score-divider">:</span><strong>0</strong><span class="team-red">ROV</span></div>
           <div class="hud-actions"><button id="restart-button" class="icon-button restart" type="button" aria-label="Restart this highlight" title="Restart">↻</button><button class="icon-button" id="conditions-button" type="button" aria-label="Match settings" title="Match settings" aria-haspopup="dialog" aria-controls="conditions-dialog"><span id="conditions-icon" aria-hidden="true">☀</span></button></div>
         </header>
         <div class="overlay title-overlay" id="title-overlay">
-          <div class="title-content"><span class="title-ball" aria-hidden="true">⚽</span><h1>SHOPAR<span>FOOTBALL</span></h1><button class="primary-button" id="play-button" type="button">PLAY ALL 7 <span aria-hidden="true">▶</span></button><button class="secondary-button" id="select-highlight-button" type="button" aria-haspopup="dialog" aria-controls="highlight-dialog">CHOOSE HIGHLIGHT</button></div>
+          <div class="title-content"><span class="title-ball" aria-hidden="true">⚽</span><h1>SHOPAR<span>FOOTBALL</span></h1><button class="primary-button" id="play-button" type="button">PLAY ALL 8 <span aria-hidden="true">▶</span></button><button class="secondary-button" id="select-highlight-button" type="button" aria-haspopup="dialog" aria-controls="highlight-dialog">CHOOSE HIGHLIGHT</button></div>
         </div>
-        <div class="overlay result-overlay hidden" id="result-overlay"><div class="result-content"><span class="eyebrow" id="result-kicker">1/7</span><div class="result-symbol" id="result-symbol" aria-hidden="true">↗</div><h2 id="result-title">GOAL!</h2><p class="sr-only" id="result-detail"></p><button class="primary-button" id="next-button" type="button">NEXT <span aria-hidden="true">→</span></button><button class="secondary-button" id="result-select-button" type="button" aria-haspopup="dialog" aria-controls="highlight-dialog">CHOOSE HIGHLIGHT</button></div></div>
-        <div class="overlay summary-overlay hidden" id="summary-overlay"><div class="summary-content"><h2 id="summary-title">FULL TIME</h2><div class="rating"><strong id="rating">0</strong><span>/ 100</span></div><div class="summary-stats"><div><strong id="total-goals">0</strong><span>GOALS</span></div><div><strong id="total-passes">0</strong><span>PASSES</span></div><div><strong id="total-tackles">0</strong><span>BALL WON</span></div><div><strong id="total-misses">0</strong><span>MISSES</span></div></div><p class="sr-only" id="summary-detail"></p><button class="primary-button" id="again-button" type="button">PLAY AGAIN <span aria-hidden="true">↻</span></button><button class="secondary-button" id="summary-select-button" type="button" aria-haspopup="dialog" aria-controls="highlight-dialog">CHOOSE HIGHLIGHT</button></div></div>
+        <div class="overlay result-overlay hidden" id="result-overlay"><div class="result-content"><span class="eyebrow" id="result-kicker">1/8</span><div class="result-symbol" id="result-symbol" aria-hidden="true">↗</div><h2 id="result-title">GOAL!</h2><p class="sr-only" id="result-detail"></p><button class="primary-button" id="next-button" type="button">NEXT <span aria-hidden="true">→</span></button><button class="secondary-button" id="result-select-button" type="button" aria-haspopup="dialog" aria-controls="highlight-dialog">CHOOSE HIGHLIGHT</button></div></div>
+        <div class="overlay summary-overlay hidden" id="summary-overlay"><div class="summary-content"><h2 id="summary-title">FULL TIME</h2><div class="rating"><strong id="rating">0</strong><span>/ 100</span></div><div class="summary-stats"><div><strong id="total-goals">0</strong><span>GOALS</span></div><div><strong id="total-passes">0</strong><span>PASSES</span></div><div><strong id="total-tackles">0</strong><span>BALL WON</span></div><div><strong id="total-saves">0</strong><span>SAVES</span></div><div><strong id="total-misses">0</strong><span>MISSES</span></div></div><p class="sr-only" id="summary-detail"></p><button class="primary-button" id="again-button" type="button">PLAY AGAIN <span aria-hidden="true">↻</span></button><button class="secondary-button" id="summary-select-button" type="button" aria-haspopup="dialog" aria-controls="highlight-dialog">CHOOSE HIGHLIGHT</button></div></div>
         <div class="contact-heading hidden" id="contact-heading"><h2>STRIKE</h2><p>Tap a point on the ball</p></div>
         <div class="contact-footer hidden" id="contact-footer"><span>← CURVE →</span><span>↓ LOFT</span><div class="contact-timer"><i id="contact-timer-fill"></i></div></div>
         <div class="toast hidden" id="toast" role="status"></div>
@@ -56,12 +57,12 @@
   <dialog class="conditions-dialog highlight-dialog" id="highlight-dialog" aria-labelledby="highlight-title">
     <div class="conditions-heading"><h2 id="highlight-title">Choose highlight</h2><button id="highlight-close" class="icon-button" type="button" aria-label="Close highlight selection">×</button></div>
     <div class="highlight-options" id="highlight-list"></div>
-    <button class="primary-button" id="play-all-button" type="button">PLAY ALL 7 <span aria-hidden="true">▶</span></button>
+    <button class="primary-button" id="play-all-button" type="button">PLAY ALL 8 <span aria-hidden="true">▶</span></button>
   </dialog>
   <dialog class="conditions-dialog help-dialog" id="help-dialog" aria-labelledby="help-title">
     <div class="conditions-heading"><h2 id="help-title">How to play</h2><button id="help-close" class="icon-button" type="button" aria-label="Close help">×</button></div>
     <div class="help-steps"><div><span aria-hidden="true">↙</span><strong>1. Drag back</strong><p>Aim &amp; power</p></div><div><span aria-hidden="true">↗</span><strong>2. Release</strong><p>Prepare your kick</p></div><div><span aria-hidden="true">◎</span><strong>3. Tap the ball</strong><p>Choose contact</p></div></div>
-    <div class="contact-guide"><span>← → Curve</span><span>↓ Loft</span><span>↑ Low shot</span></div><p class="help-receive">Incoming pass? Tap the ring to receive. Defending? Hold anywhere to chase. Release when the ball ring turns green. Cut the Pass? Tap a destination to intercept.</p>
+    <div class="contact-guide"><span>← → Curve</span><span>↓ Loft</span><span>↑ Low shot</span></div><p class="help-receive">Incoming pass? Tap the ring to receive. Defending? Hold anywhere to chase. Release when the ball ring turns green. Cut the Pass? Tap a destination to intercept. Save the Penalty? Swipe toward the shot, diagonally upward for high shots. Stay still for the middle.</p>
     <button class="primary-button" id="help-done" type="button">GOT IT <span aria-hidden="true">✓</span></button>
   </dialog>
   <dialog class="conditions-dialog" id="conditions-dialog" aria-labelledby="conditions-title" aria-describedby="conditions-description">

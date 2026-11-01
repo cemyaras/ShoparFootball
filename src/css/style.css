@@ -50,7 +50,7 @@ h1 span { display: block; color: var(--mint); font-size: .52em; line-height: 1.8
 .rating { display: flex; justify-content: center; align-items: baseline; gap: 8px; }
 .rating strong { color: var(--mint); font-size: 80px; line-height: 1; }
 .rating > span { color: #b0c3a5; font-size: 14px; }
-.summary-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 26px 0 32px; }
+.summary-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin: 26px 0 32px; }
 .summary-stats strong { display: block; font-size: 28px; }
 .summary-stats span { display: block; margin-top: 6px; font-size: 9px; letter-spacing: 1px; color: #b0c3a5; }
 .contact-heading { position: absolute; z-index: 4; top: 90px; left: 0; width: 100%; text-align: center; pointer-events: none; }

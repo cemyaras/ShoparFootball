@@ -1,10 +1,10 @@
 # Adding a highlight
 
-The seven production highlights are startup registrations in `src/js/highlights/catalog.js`. A definition supplies actors, metadata, outcomes and `create(context)`. The menu, progress, practice/retry, summary and keeper plan derive from the instance's ordered definition snapshot. Add a definition and its controller without adding scenario branches to `game.js`, input, UI or rendering.
+The eight production highlights are startup registrations in `src/js/highlights/catalog.js`. A definition supplies actors, metadata, outcomes and `create(context)`. The menu, progress, practice/retry, summary and keeper plan derive from the instance's ordered definition snapshot. Add a definition and its controller without adding scenario branches to `game.js`, input, UI or rendering.
 
 ## Reuse an existing controller
 
-This example reuses attacking controls, AI, physics, animations and results. It is documentation only; the production catalog still contains seven highlights.
+This example reuses attacking controls, AI, physics, animations and results. It is documentation only; the production catalog still contains eight highlights.
 
 ```javascript
 (() => {
@@ -48,7 +48,7 @@ Input owns native events and capture. Return `updateOnRelease: true` when the fi
 
 The frozen context supplies shared actors/ball, transient play state, persistent `memory`, live view/time/phase/resolution, physics/geometry, audio/effects, presentation requests and completion. Keep statistics and progression with Session/Results. `possessionReceived(offBall)` records a completed pass/reception through the session. Persistent memory is keyed by definition ID and survives retries and new series; keep per-attempt clocks and targets on the new controller instance.
 
-Call `context.complete(outcomeId, detail)` when actual input/simulation resolves the attempt. The definition's outcome descriptors supply success, counter, title/banner/flight text, sound/effect and delay policy. Reuse `OutcomeDefinitions.attack`, `.tackle` or `.cutPass`, or provide custom keys with the same descriptor shape. Supported counter names are `goals`, `passes`, `misses`, `receives` and `tackles`. Descriptor banners are templates; Results copies them before animation. Defensive entries retain the current 1.3-second result delay and controller-provided detail. Completion is guarded against duplicate awards, and disposed attempt scopes cannot complete a later attempt.
+Call `context.complete(outcomeId, detail)` when actual input/simulation resolves the attempt. The definition's outcome descriptors supply success, counter, title/banner/flight text, sound/effect and delay policy. Reuse `OutcomeDefinitions.attack`, `.tackle` or `.cutPass`, or provide custom keys with the same descriptor shape. Supported counter names are `goals`, `passes`, `misses`, `receives` and `tackles` and `saves`. Descriptor banners are templates; Results copies them before animation. Defensive entries retain the current 1.3-second result delay and controller-provided detail. Completion is guarded against duplicate awards, and disposed attempt scopes cannot complete a later attempt.
 
 Use [AttackController](../src/js/highlights/attack.js) for shared possession flow, [ReceptionController](../src/js/highlights/reception.js) for an entry phase that hands over to attacking possession, and the two defensive controllers for standalone timing/movement examples. The full boundary is described in [Architecture](ARCHITECTURE.md).
 

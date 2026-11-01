@@ -33,6 +33,7 @@ From another terminal at the repository root:
 ```bash
 node tests/browser/seven-highlights.mjs
 node tests/browser/platform.mjs
+node tests/browser/penalty.mjs
 ```
 
 The default target is the repository's `file://` entry point. For HTTP/static-subdirectory verification, serve the parent directory with `python3 -m http.server 8000 --directory ..`, then run:
@@ -45,7 +46,7 @@ GAME_URL=http://127.0.0.1:8000/ShoparFootball/index.html node tests/browser/seve
 
 Use `CDP_URL` to override the default `http://127.0.0.1:9227` browser endpoint. The runner exits nonzero for failed assertions/runtime exceptions, disconnects when finished, and leaves Chrome open for inspection. Stop the dedicated browser and HTTP server after testing.
 
-The flow covers the seven-highlight session, native touch, passes/return passes, interception, hold/release defense, the seventh defensive pass interception, summary, replay, rotation/cancellation, and desktop mouse shooting. It records screenshots under ignored `test-results/browser/`. Attacking flight is fast-forwarded through the same update method; defensive timing uses real-time playback. This is a repeatable flow check, not a replacement for normal-speed shot readability, all seven result variants, physical-device testing, or the broader viewport checklist below.
+The flow covers the eight-highlight session, native touch, passes/return passes, interception, hold/release defense, the seventh defensive pass interception, summary, replay, rotation/cancellation, and desktop mouse shooting. It records screenshots under ignored `test-results/browser/`. Attacking flight is fast-forwarded through the same update method; defensive timing uses real-time playback. This is a repeatable flow check, not a replacement for normal-speed shot readability, all seven result variants, physical-device testing, or the broader viewport checklist below.
 
 ## Input and contact
 
@@ -106,8 +107,8 @@ Test full-power bottom contact with left, central, and right aim directions: the
 
 ## Session flow
 
-- Complete all seven highlights and verify that every resolved chance offers a clear result.
-- Confirm that the seventh result opens the session summary with goals, successful passes, balls won, missed chances, and a score from 0 to 100.
+- Complete all eight highlights and verify that every resolved chance offers a clear result.
+- Confirm that the eighth result opens the session summary with goals, successful passes, balls won, missed chances, and a score from 0 to 100.
 - Restart before and after a completed pass. Statistics from the current highlight should reset without changing earlier highlights.
 - Restart during the brief goal or save animation. The previous result must not interrupt the restarted highlight.
 - Use **Play Again** and confirm that the session restarts at highlight one with empty statistics.
@@ -173,7 +174,7 @@ Rotate the device during an unfinished drag and confirm that it cancels without 
 - Check all seven scenarios: no shoot/pass buttons or fixed bottom dock should appear. The power indicator should appear while dragging and disappear after release or cancellation.
 - Open **?** from the title screen and during contact selection. Verify pause/resume and both close controls. The big contact ball must fit between its heading and timer.
 - In settings, change venue/weather and toggle sound. Confirm these remain usable without a permanent toolbar or side panel.
-- Play a complete seven-highlight session with native touch, including passes and off-ball reception. Check result/summary/replay buttons on short portrait and landscape screens.
+- Play a complete eight-highlight session with native touch, including passes and off-ball reception. Check result/summary/replay buttons on short portrait and landscape screens.
 
 ## Highlight picker and practice
 
@@ -192,7 +193,13 @@ Rotate the device during an unfinished drag and confirm that it cancels without 
 - Check mouse, touch, portrait, and short landscape; the selection card must be reachable by scrolling. Verify settings/help/picker pause and restart/retry state clearing.
 - Finish the seventh action in a full series and verify summary, rating, replay, and returning to a different practice highlight.
 
+## Save the Penalty
+
+`tests/browser/penalty.mjs` checks normal-speed native mouse/touch input at desktop, portrait and short-landscape sizes. It exercises picker entry, low/high saves, wrong-side and late failures, staying central, retry and summary layout. Run browser scripts sequentially against the dedicated Chrome instance. Verify that gloves remain visible during dives, direction agrees with the screen, contact matches the ball, and the result explains the actual outcome. Check sub-threshold cancellation, rotation, modal pause and restart. The normal eight-highlight series runner also plays and saves the eighth penalty before summary/replay.
+
 ## Validation history
+
+Save the Penalty passes all 102 automated tests. The added regression cases exercise low/high saves, wrong direction, late commitment, central no-input saves, screen-sized gesture thresholds, immediate commitment, cancellation, modal pause, stale completion, retry counters and summary scoring. Shot outcomes agree at 30/60/120 FPS. Existing catalog-count and series-boundary assertions now include the eighth production entry and keep the original seven gameplay checks. The normal eight-highlight series passed 31 native checks through both file and HTTP-subdirectory entry points. The normal-speed penalty runner passed 37 checks with native mouse/emulated touch at 1280 × 900, 390 × 844 and 568 × 320, including high/low saves, wrong/late failures, centre saves, retry and summary fit. All 38 platform checks also passed without runtime exceptions. High-flight gloves and short-landscape summary screenshots were reviewed. These browser runs use Chrome touch emulation rather than physical devices.
 
 Stage 9 completes modularization with 99 passing tests and the existing gameplay assertions preserved. Class loading is now tested without DOM/startup/registry reads; the final deferred bootstrap is tested for one construction and the inspection instance. Controller-only registrations reject the removed adapter path. A standalone test definition registers after class loading, enters through bootstrap, resolves success/failure through normalized input, displays results, rejects duplicate/stale awards, retries with restored counters, and disposes without any coordinator change. Production still contains seven highlights. The loader injection point moved to just before bootstrap. One-off before/after comparisons match 42 numeric trajectories, 192 result presentations, 14 animated drawing sequences and the full 6,768-frame viewport/venue/weather/motion matrix exactly. Syntax/dependency checks and whitespace checks pass. Both file and HTTP-subdirectory seven-highlight native-touch sessions, desktop mouse, summary/replay/rotation, and all 38 platform checks passed without runtime exceptions. Browser checks used headless Chrome with emulated touch; the series runner's attacking flight fast-forward and physical-device/normal-speed readability limitations remain the separate checklist above.
 

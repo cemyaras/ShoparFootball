@@ -12,15 +12,15 @@ function catalog() {
   return window.ShoparFootball;
 }
 
-test('the catalog retains the seven ordered IDs, titles and starting positions', () => {
+test('the catalog retains the eight ordered IDs, titles and starting positions', () => {
   const entries = catalog().Highlights.all();
   assert.equal(JSON.stringify(entries.map(({ id, title, player }) => [id, title, player])), JSON.stringify([
     ['one-on-one', 'One on one.', [500, 365]], ['from-distance', 'From distance.', [540, 520]],
     ['through-ball', 'The through ball.', [600, 476]], ['two-against-two', 'Two against two.', [379, 425]],
     ['read-the-game', 'Read the game.', [485, 428]], ['win-the-ball', 'Win the Ball', [370, 520]],
-    ['cut-the-pass', 'Cut the Pass', [550, 530]]
+    ['cut-the-pass', 'Cut the Pass', [550, 530]], ['save-the-penalty', 'Save the Penalty', [500, 400]]
   ]));
-  assert.equal(entries.filter(entry => entry.category === 'defense').length, 2);
+  assert.equal(entries.filter(entry => entry.category === 'defense').length, 3);
   assert.equal(entries.filter(entry => entry.keeperEligible).length, 5);
 });
 

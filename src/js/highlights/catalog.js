@@ -1,4 +1,4 @@
-/* The seven existing highlights, in their original playing order. */
+/* Independent highlights in playing order. */
 (() => {
   'use strict';
   const registry = window.ShoparFootball.Highlights;
@@ -11,4 +11,5 @@
   registry.register({ id: 'read-the-game', category: 'attack', keeperEligible: true, create: context => new window.ShoparFootball.ReceptionController(context), outcomes: outcomes.attack, cameraExtraX: [180, 865], title: 'Read the game.', tag: 'RIGHT PLACE. RIGHT TIME.', description: 'The ball is on its way. Read the pass, get there, and make it yours.', intro: 'An incoming pass! Tap the marked space to meet it.', player: [485, 428], mates: [[200, 320]], defenders: [[737, 292]], tip: 'Tap ahead of the moving ball, near the mint ring. You move automatically.' });
   registry.register({ id: 'win-the-ball', category: 'defense', keeperEligible: false, create: context => new window.ShoparFootball.WinBallController(context), outcomes: outcomes.tackle, title: 'Win the Ball', kind: 'defense', player: [370, 520], mates: [], defenders: [[535, 350]] });
   registry.register({ id: 'cut-the-pass', category: 'defense', keeperEligible: false, create: context => new window.ShoparFootball.CutPassController(context), outcomes: outcomes.cutPass, title: 'Cut the Pass', kind: 'pass_defense', player: [550, 530], mates: [], defenders: [[340, 350], [760, 370]] });
+  registry.register({ id: 'save-the-penalty', category: 'defense', keeperEligible: false, title: 'Save the Penalty', player: [500, 400], mates: [], defenders: [[500, 250]], outcomes: outcomes.penalty, create: context => new window.ShoparFootball.PenaltySaveController(context) });
 })();

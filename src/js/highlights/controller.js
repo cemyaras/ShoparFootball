@@ -22,12 +22,13 @@
     const moving = [State.BALL_IN_MOTION, State.INTERCEPTION].includes(state) || state === State.DEFENDING && activity.moving;
     const celebrating = actor.celebration > 0, diving = actor.team === 'keeper' && actor.dive > 0;
     return {
+      hidden: activity.hidden, keeperHands: activity.keeperHands,
       controlled: actor === play.controlled && ![State.TITLE, State.BALL_CONTACT].includes(state),
       moving, kicking: play.kicker === actor && play.motionTime < .28 || activity.kicking,
-      celebrating, hop: celebrating ? -Math.abs(Math.sin(actor.celebration * 10)) * 9 : 0,
+      celebrating, hop: activity.hop ?? (celebrating ? -Math.abs(Math.sin(actor.celebration * 10)) * 9 : 0),
       stride: moving ? Math.sin(actor.step * 1.4) * 4.5 : 0,
       tackling: activity.tackling, stumbling: activity.stumbling, lean: activity.lean,
-      diving, diveLean: (actor.diveDirection || 1) * -.75,
+      diving: activity.diving ?? diving, diveLean: activity.diveLean ?? (actor.diveDirection || 1) * -.75,
       holdingBall: actor.team === 'keeper' && context.resolution?.kind === 'save'
     };
   }

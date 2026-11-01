@@ -33,8 +33,12 @@
     pass_won: ballWon('INTERCEPTED!', 'PASS CUT OUT'),
     pass_through: failure('PASS GOT THROUGH!', 'PASS GOT THROUGH!', 'CLOSE THE LANE SOONER', '#ff8b79', 'PASS GOT THROUGH!')
   };
+  const penalty = {
+    penalty_saved: { ...ballWon('SAVED!', 'PENALTY STOPPED'), stat: 'saves', sound: 'save' },
+    penalty_conceded: failure('GOAL CONCEDED!', 'GOAL CONCEDED!', 'READ THE SHOT · TIME THE DIVE', '#ff8b79', 'GOAL CONCEDED!')
+  };
   window.ShoparFootball.OutcomeDefinitions = {
-    attack, tackle, cutPass, all: { ...attack, ...tackle, ...cutPass },
+    attack, tackle, cutPass, penalty, all: { ...attack, ...tackle, ...cutPass, ...penalty },
     fallback: failure('The chance slips away.', 'CHANCE MISSED!', 'KEEP YOUR HEAD UP', '#f48fb1', undefined)
   };
 })();

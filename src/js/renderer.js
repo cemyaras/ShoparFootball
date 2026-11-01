@@ -36,13 +36,13 @@
       if (this.scene.state === State.AIMING && this.scene.aim?.power > .03) this.drawing.drawAim(c);
       this.drawing.drawTrail(c); this.drawing.drawBallShadow(c, this.scene.ball);
       const actors = [this.scene.player, ...this.scene.mates, ...this.scene.defenders, this.scene.keeper].sort((a, b) => a.y - b.y);
-      const aboveGoal = this.drawing.ballAboveGoal(), held = this.scene.resolution?.kind === 'save'; let drawn = false;
+      const aboveGoal = this.drawing.ballAboveGoal(), held = this.scene.resolution?.kind === 'save' || this.scene.presentation().ballHeld; let drawn = false;
       for (const p of actors) {
         if (!aboveGoal && !held && !drawn && this.scene.ball.z < 35 && this.scene.ball.y <= p.y) { this.drawing.drawBall(c, this.scene.ball); drawn = true; }
         this.drawing.drawPlayer(c, p);
       }
       if (!aboveGoal && !drawn) this.drawing.drawBall(c, this.scene.ball);
-      if (this.scene.resolution?.kind === 'goal') this.drawing.drawGoalBack(c, true);
+      if (this.scene.resolution?.kind === 'goal' || this.scene.presentation().ballInNet) this.drawing.drawGoalBack(c, true);
       this.drawing.drawGoalFront(c);
       if (aboveGoal) this.drawing.drawBall(c, this.scene.ball);
       this.drawing.drawCrossingMarker(c);
@@ -226,6 +226,7 @@
       const pose = this.scene.actorPose(p), isControlled = pose.controlled, moving = pose.moving;
       const isShooting = pose.kicking, celebration = pose.celebrating, hop = pose.hop, stride = pose.stride;
       const tackling = pose.tackling;
+      if (pose.hidden) return;
 
       c.save();
       c.translate(p.x, p.y + hop);
@@ -301,6 +302,11 @@
         c.fillRect(-11, -22, 3, 9); c.fillRect(8, -22, 3, 9);
         c.fillStyle = skinColor;
         c.fillRect(-11, -24, 3, 3); c.fillRect(8, -24, 3, 3);
+      } else if (pose.keeperHands) {
+        for (const hand of pose.keeperHands) {
+          c.strokeStyle = shirtMain; c.lineWidth = 4; c.beginPath(); c.moveTo(0, -12); c.lineTo(hand.x, hand.y); c.stroke();
+          c.fillStyle = '#ffffff'; c.fillRect(hand.x - 2.5, hand.y - 2.5, 5, 5);
+        }
       } else if (pose.diving) {
         c.fillStyle = shirtMain;
         c.fillRect(-12, -18, 4, 10); c.fillRect(8, -18, 4, 10);
@@ -346,7 +352,7 @@
       c.restore();
     }
     drawBallShadow(c, b) {
-      if (this.scene.resolution?.kind === 'save') return;
+      if (this.scene.resolution?.kind === 'save' || this.scene.presentation().ballHeld) return;
       const geometry = this.scene.geometry.ballGeometry(b);
       const baseR = geometry.groundRadius, height = geometry.height;
       c.save();

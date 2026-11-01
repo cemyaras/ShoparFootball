@@ -77,7 +77,7 @@
     }
     showSummary(score, stats) {
       $('rating').textContent = score; $('total-goals').textContent = stats.goals; $('total-passes').textContent = stats.passes; $('total-misses').textContent = stats.misses;
-      $('total-tackles').textContent = stats.tackles;
+      $('total-tackles').textContent = stats.tackles; $('total-saves').textContent = stats.saves || 0;
       $('summary-title').textContent = 'FULL TIME';
       $('summary-detail').textContent = score >= 75 ? 'Vision, touch, and a little nerve. A performance to remember.' : 'Every chance teaches you something. Go again and find your touch.';
     }
