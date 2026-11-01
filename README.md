@@ -75,14 +75,36 @@ ShoparFootball/
 │   ├── css/
 │   │   └── style.css       # Presentation and responsive layouts
 │   └── js/
-│       ├── defense.js      # Defensive tackle and pass-interception highlights
+│       ├── core.js         # Shared constants, math, actor and ball geometry
+│       ├── physics.js      # Ball physics, player movement, and goal-line classification
+│       ├── audio.js        # Synthesized sound with an injected UI notification
 │       ├── environment.js  # Venue palettes, scenery, weather, and preferences
-│       └── game.js         # Input, state, physics, AI, audio, and rendering
+│       ├── highlights/     # Registry, attack/reception/defensive controllers, and outcomes
+│       ├── session.js      # Counters, checkpoints, progression, and rating
+│       ├── results.js      # Outcome application and presentation models
+│       ├── platform/       # Viewport mapping, DOM UI, and native pointer transport
+│       ├── renderer.js     # Canvas drawing through a bounded presentation scene
+│       ├── game.js         # Exported coordinator class and shared state
+│       └── bootstrap.js    # Final application construction and inspection instance
 ├── docs/
 │   ├── ARCHITECTURE.md     # Runtime design and game systems
-│   └── TESTING.md          # Validation commands and manual test scenarios
+│   ├── TESTING.md          # Validation commands and manual test scenarios
+│   ├── HIGHLIGHTS.md       # Registering and validating a new highlight
+│   └── REFACTOR.md         # Completed modularization stages and verification evidence
 ├── tests/
-│   └── game.test.cjs       # Dependency-free gameplay regression tests
+│   ├── bootstrap.test.cjs  # Side-effect-free class loading and final startup
+│   ├── game.test.cjs       # Gameplay regression tests
+│   ├── audio.test.cjs      # Audio lifecycle and tone compatibility
+│   ├── attack.test.cjs     # Headless attack/reception and simulation ordering
+│   ├── renderer.test.cjs   # Headless render purity, pose data, and draw layers
+│   ├── physics.test.cjs    # Headless core/physics service boundary
+│   ├── highlights.test.cjs # Registry identity, order, and catalog compatibility
+│   ├── session.test.cjs    # Headless checkpoints, progression, and rating
+│   ├── controllers.test.cjs # Headless controller lifecycle and defensive behavior
+│   ├── helpers/            # Runtime loader shared with checks
+│   └── browser/            # Optional Chrome mouse/touch regression flow
+├── scripts/check.cjs      # Check all runtime JavaScript and entry-point dependencies
+├── AGENTS.md              # Rules for incremental, compatible changes
 ├── .editorconfig           # Shared editor conventions
 ├── .gitattributes          # Cross-platform line ending rules
 ├── .gitignore              # Local files and generated output
@@ -105,11 +127,13 @@ Edit the source files and reload the browser. No installation or compilation is 
 If Node.js is available, check JavaScript syntax with:
 
 ```bash
-node --check src/js/game.js
-node --check src/js/environment.js
-node --check src/js/defense.js
-node --test tests/game.test.cjs
+node scripts/check.cjs
+node --test tests/*.test.cjs
 ```
+
+The staged modularization roadmap and current progress are recorded in [Refactor](docs/REFACTOR.md). Extracted modules use the `window.ShoparFootball` namespace while the existing `window.footballGame` inspection surface remains available.
+
+To add a scenario or controller, follow [Adding a highlight](docs/HIGHLIGHTS.md). Register it before `bootstrap.js`; the coordinator needs no scenario-specific edits.
 
 See [Architecture](docs/ARCHITECTURE.md) for the game systems, [Testing](docs/TESTING.md) for the validation checklist, and [Contributing](CONTRIBUTING.md) for the development workflow.
 

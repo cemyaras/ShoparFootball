@@ -29,12 +29,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Check JavaScript syntax
-        run: |
-          node --check src/js/environment.js
-          node --check src/js/defense.js
-          node --check src/js/game.js
+        run: node scripts/check.cjs
       - name: Run gameplay regression tests
-        run: node --test tests/game.test.cjs
+        run: node --test tests/*.test.cjs
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Build with Jekyll

@@ -2,16 +2,25 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 
-const source = fs.readFileSync(path.join(__dirname, '../src/js/game.js'), 'utf8');
-const defenseSource = fs.readFileSync(path.join(__dirname, '../src/js/defense.js'), 'utf8');
-const environmentSource = fs.readFileSync(path.join(__dirname, '../src/js/environment.js'), 'utf8');
+const { runtimeScripts } = require('./helpers/runtime.cjs');
+const scripts = runtimeScripts();
+const environmentSource = scripts.find(script => script.filename.endsWith('/environment.js')).source;
+
+// Minimal EventTarget behavior lets platform lifecycle tests exercise the real bindings.
+function eventTarget() {
+  const listeners = new Map();
+  return {
+    addEventListener(type, handler) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(handler); },
+    removeEventListener(type, handler) { listeners.get(type)?.delete(handler); },
+    dispatchEvent(event) { event.target ||= this; for (const handler of [...(listeners.get(event.type) || [])]) handler(event); },
+    listenerCount(type) { return listeners.get(type)?.size || 0; }
+  };
+}
 
 // A minimal browser surface for deterministic game/state tests. Visual QA uses a real browser.
-function fixture(width = 1000, height = 740) {
+function fixture(width = 1000, height = 740, beforeBootstrap = null) {
   const elements = new Map();
   const noop = () => {};
   const gradient = { addColorStop: noop };
@@ -21,7 +30,7 @@ function fixture(width = 1000, height = 740) {
     return {
       textContent: '', innerHTML: '', style: {}, dataset: {}, children: [],
       classList: { toggle: noop, add: noop, remove: noop },
-      addEventListener: noop, removeEventListener: noop, setAttribute: noop,
+      ...eventTarget(), setAttribute: noop,
       showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect: () => ({ x: 0, y: 0, left: 0, top: 0, width, height }),
       querySelectorAll: () => [],
@@ -33,7 +42,7 @@ function fixture(width = 1000, height = 740) {
     };
   }
   const document = {
-    body: element('body'), addEventListener: noop, removeEventListener: noop,
+    body: element('body'), ...eventTarget(),
     getElementById: id => {
       if (!elements.has(id)) {
         const node = element(id);
@@ -44,14 +53,15 @@ function fixture(width = 1000, height = 740) {
     }
   };
   const window = {
-    devicePixelRatio: 1, addEventListener: noop, removeEventListener: noop,
+    devicePixelRatio: 1, ...eventTarget(),
     matchMedia: query => ({ matches: query.includes('prefers-reduced-motion') ? true : width <= 1024 })
   };
   const sandbox = { window, document, requestAnimationFrame: () => 1, cancelAnimationFrame: noop, ResizeObserver: class { observe() {} disconnect() {} } };
-  vm.runInNewContext(environmentSource, sandbox, { filename: 'environment.js' });
-  vm.runInNewContext(defenseSource, sandbox, { filename: 'defense.js' });
-  vm.runInNewContext(source, sandbox, { filename: 'game.js' });
-  return { game: window.footballGame, elements };
+  for (const { source, filename } of scripts) {
+    if (filename.endsWith('/bootstrap.js') && beforeBootstrap) beforeBootstrap(window.ShoparFootball);
+    vm.runInNewContext(source, sandbox, { filename });
+  }
+  return { game: window.footballGame, elements, window, document };
 }
 
 function start(game, index = 0) {
@@ -827,4 +837,262 @@ test('pass interception success and failure agree at 30, 60 and 120 FPS', () => 
     for (let i = 0; i < fps * 8 && g.state !== 'RESULT'; i++) g.update(1 / fps);
     assert.equal(g.state, 'RESULT'); assert.equal(g.resolution.kind, win ? 'pass_won' : 'pass_through'); g.render();
   }
+});
+
+test('a startup registration updates the menu, progress and full-series/practice boundaries', () => {
+  const { game: g, elements } = fixture(1000, 740, namespace => {
+    namespace.Highlights.register({ ...namespace.Highlights.get('one-on-one'), id: 'test-extra', title: 'Test extra', keeperEligible: false });
+  });
+  assert.match(elements.get('play-button').innerHTML, /PLAY ALL 8/);
+  assert.match(elements.get('play-all-button').innerHTML, /PLAY ALL 8/);
+  assert.equal((elements.get('chapter-progress').innerHTML.match(/<i>/g) || []).length, 8);
+  assert.equal((elements.get('highlight-list').innerHTML.match(/data-highlight=/g) || []).length, 8);
+  g.startPractice(7); g.update(.9);
+  assert.equal(g.state, 'AIMING'); assert.equal(elements.get('chapter-number').textContent, '8/8');
+  kick(g, { x: 420 }); until(g, () => g.state === 'RESULT');
+  g.nextHighlight(); g.update(.9); assert.equal(g.index, 7); assert.equal(g.state, 'AIMING');
+  g.beginSession(); g.index = 6; g.beginHighlight(); g.update(.9);
+  until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
+  assert.equal(g.index, 7); assert.equal(g.state, 'AIMING');
+  kick(g, { x: 420 }); until(g, () => g.state === 'RESULT'); g.nextHighlight();
+  assert.equal(g.state, 'SESSION_SUMMARY');
+});
+
+test('reordering registrations preserves each entry adapter, camera metadata and keeper eligibility', () => {
+  const order = ['cut-the-pass', 'read-the-game', 'win-the-ball', 'one-on-one', 'from-distance', 'two-against-two', 'through-ball'];
+  const { game: g } = fixture(1000, 740, namespace => {
+    const original = namespace.Highlights, reordered = new namespace.HighlightRegistry();
+    for (const id of order) reordered.register(original.get(id));
+    namespace.Highlights = reordered;
+  });
+  g.startPractice(0); g.update(.9); assert.equal(g.state, 'DEFENDING'); assert.ok(g.defense.selectTarget);
+  assert.equal(g.keeper.profile, 'line');
+  g.startPractice(1); g.update(.9); assert.equal(g.state, 'INTERCEPTION');
+  assert.ok(g.cameraBounds().left <= 180 && g.cameraBounds().left + g.cameraBounds().width >= 865);
+  g.startPractice(2); g.update(.9); assert.equal(g.state, 'DEFENDING'); assert.ok(g.defense.beginHold);
+  g.startPractice(6); g.update(.9); assert.equal(g.state, 'AIMING');
+  const lines = []; g.ctx.moveTo = (x, y) => lines.push([x, y]); g.drawRunMarkers(g.ctx);
+  assert.ok(lines.some(([x, y]) => x === g.mates[0].x && y === g.mates[0].y - 22));
+  let calls = 0; const plan = g.createKeeperPlan(() => { calls++; return 0; });
+  assert.equal(calls, 4); assert.equal(plan.filter(p => p === 'advanced').length, 2);
+  assert.equal(plan.filter(p => p === 'line').length, 3);
+  assert.equal(plan[0], undefined); assert.equal(plan[2], undefined);
+});
+
+test('FootballGame session fields remain writable aliases of the single session state', () => {
+  const { game: g } = fixture();
+  const stats = { goals: 2, passes: 0, misses: 0, receives: 0, tackles: 1 };
+  g.stats = stats; assert.equal(g.session.stats, stats);
+  g.session.index = 3; assert.equal(g.index, 3);
+  g.practiceIndex = 3; assert.equal(g.session.practiceIndex, 3);
+  g.outcomes = [true]; assert.equal(g.outcomes, g.session.outcomes);
+  g.scenarioSnapshot = { ...stats }; g.stats.passes = 4;
+  g.restart(); assert.equal(g.stats.passes, 0); assert.equal(g.session.stats, g.stats);
+  assert.equal(g.outcomes[0], true);
+});
+
+test('registered outcome descriptors resolve once, keep banner templates intact and reset on retry', () => {
+  let descriptor;
+  const { game: g, elements } = fixture(1000, 740, namespace => {
+    const base = namespace.OutcomeDefinitions.cutPass.pass_won;
+    descriptor = { ...base, title: 'TEST WIN', detail: 'TEST DETAIL', flight: 'TEST FLIGHT', banner: { ...base.banner, text: 'TEST WIN' } };
+    namespace.Highlights.register({ ...namespace.Highlights.get('one-on-one'), id: 'test-result', title: 'Test result', keeperEligible: false, outcomes: { custom: descriptor } });
+  });
+  g.startPractice(7); g.update(.9); g.finish('custom', 'Custom detail');
+  assert.equal(g.stats.tackles, 1); assert.equal(g.stats.goals, 0); assert.equal(g.stats.misses, 0);
+  assert.equal(elements.get('result-title').textContent, 'TEST WIN');
+  assert.equal(elements.get('result-detail').textContent, 'TEST DETAIL');
+  assert.equal(elements.get('bottom-hint').textContent, 'TEST FLIGHT');
+  assert.equal(g.pendingResult.wait, 2.1); g.finish('custom'); assert.equal(g.stats.tackles, 1);
+  g.update(.2); assert.ok(g.banner.time < descriptor.banner.time); assert.equal(descriptor.banner.time, 1.4);
+  until(g, () => g.state === 'RESULT'); g.finish('custom'); assert.equal(g.stats.tackles, 1);
+  g.nextHighlight(); g.update(.9); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[7], undefined);
+});
+
+test('controller contexts expose actor references and services but no host, DOM or statistics', () => {
+  const { game: g } = fixture(); start(g, 6);
+  const c = g.controller.context;
+  assert.equal(c.player, g.player); assert.equal(c.ball, g.ball); assert.equal(c.defenders, g.defenders);
+  assert.equal(c.view, g.view); assert.equal(Object.isFrozen(c), true);
+  for (const key of ['game', 'document', 'stats', 'session', 'index', 'pointer', 'finish']) assert.equal(c[key], undefined);
+  const previousView = c.view; g.view = { ...g.view, scale: .75 }; assert.notEqual(c.view, previousView);
+  assert.equal(c.view.scale, .75);
+});
+
+test('stale or disposed controllers cannot complete a new highlight or award counters', () => {
+  const { game: g } = fixture(); start(g, 6); const old = g.controller.context;
+  g.restart(); g.update(.9); old.complete('pass_won', 'Stale result');
+  assert.equal(g.pendingResult, null); assert.equal(g.stats.tackles, 0);
+  const active = g.controller.context; g.destroy(); active.complete('pass_won', 'Disposed result');
+  assert.equal(g.pendingResult, null); assert.equal(g.stats.tackles, 0);
+});
+
+test('Win the Ball variant memory persists across retries and sessions while attempts start clean', () => {
+  const { game: g } = fixture(); g.defenseVariant = -1; start(g, 5);
+  const first = g.defense.variant.name; g.restart(); g.update(.9);
+  const second = g.defense.variant.name; assert.notEqual(first, second);
+  g.startPractice(5); g.update(.9); assert.notEqual(g.defense.variant.name, second);
+  g.startPractice(5); g.update(.9); assert.equal(g.defense.variant.name, first);
+  assert.equal(g.defense.elapsed, 0); assert.equal(g.defense.phase, 'planning');
+});
+
+test('a test-only controller registration handles input, cancellation, completion and disposal through common hooks', () => {
+  const events = [];
+  const { game: g } = fixture(1000, 740, namespace => {
+    const { State } = namespace.Core;
+    namespace.Highlights.register({ ...namespace.Highlights.get('one-on-one'), id: 'test-controller', title: 'Test controller', category: 'defense', keeperEligible: false,
+      outcomes: namespace.OutcomeDefinitions.cutPass,
+      create(context) { return {
+        enter() { return { state: State.DEFENDING }; },
+        handleInput(input) {
+          events.push(input.type);
+          assert.equal(input.clientX, undefined); assert.equal(input.preventDefault, undefined);
+          if (input.type === 'up') context.complete('pass_won', 'Test controller completed');
+          return { handled: true, capture: input.type === 'down' };
+        },
+        cancelInput(reason) { events.push(reason); }, dispose() { events.push('disposed'); }
+      }; }
+    });
+  });
+  g.startPractice(7); g.update(.9); assert.equal(g.state, 'DEFENDING');
+  const e = defensePointer(g, g.player);
+  g.onPointerDown(e); assert.equal(g.pointer.id, e.pointerId); g.cancelPointer(e.pointerId);
+  assert.equal(g.pointer, null); assert.equal(g.pendingResult, null);
+  g.onPointerDown(e); g.onPointerUp(e); assert.equal(g.resolution.kind, 'pass_won'); assert.equal(g.stats.tackles, 1);
+  until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
+  assert.equal(g.index, 7); assert.equal(g.stats.tackles, 0); assert.ok(events.includes('cancel')); assert.ok(events.includes('disposed'));
+});
+
+test('viewport aliases preserve mapping and DPR while only changed geometry cancels a captured pointer', () => {
+  const { game: g, window } = fixture(320, 280); start(g);
+  const e = defensePointer(g, g.ball); g.onPointerDown(e); const pointer = g.pointer;
+  window.devicePixelRatio = 4; g.resize();
+  assert.equal(g.dpr, 3); assert.equal(g.canvas.width, 960); assert.equal(g.canvas.height, 840);
+  assert.equal(g.pointer, pointer); assert.equal(g.view, g.viewport.view);
+  const point = { x: 450, y: 320 }, screen = defensePointer(g, point), mapped = g.toWorld(screen);
+  assert.ok(Math.abs(mapped.x - point.x) < 1e-9 && Math.abs(mapped.y - point.y) < 1e-9);
+  g.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 844, height: 390 });
+  g.resize(); assert.equal(g.pointer, null); assert.equal(g.aim, null);
+  const contact = g.contactGeometry(), y = g.view.y + contact.y * g.view.scale;
+  assert.ok(y - contact.r * g.view.scale >= 0 && y + contact.r * g.view.scale <= 390);
+});
+
+test('all three bound dialogs cancel a hold, pause the encounter, and reset the frame clock on close', () => {
+  const { game: g, elements } = fixture(); start(g, 5);
+  for (const [opener, dialog, closer] of [
+    ['conditions-button', 'conditions-dialog', 'conditions-done'],
+    ['help-button', 'help-dialog', 'help-done'], ['highlight-button', 'highlight-dialog', 'highlight-close']
+  ]) {
+    holdChase(g); g.update(.1);
+    elements.get(opener).dispatchEvent({ type: 'click' });
+    assert.equal(g.pointer, null); assert.equal(g.defense.phase, 'planning');
+    const snapshot = JSON.stringify([g.ball, g.player, g.defense.elapsed]); g.update(10);
+    assert.equal(JSON.stringify([g.ball, g.player, g.defense.elapsed]), snapshot);
+    elements.get(closer).dispatchEvent({ type: 'click' });
+    g.lastTime = 123; elements.get(dialog).dispatchEvent({ type: 'close' });
+    assert.equal(g.lastTime, null); assert.ok(!g.ui.isPaused());
+  }
+  assert.equal(g.pendingResult, null);
+});
+
+test('native pointer bindings release before lost-capture callbacks and are all removed at teardown', () => {
+  const { game: g, elements, window, document } = fixture(); start(g, 5);
+  const captures = new Set(); let releases = 0, disconnected = false;
+  g.canvas.setPointerCapture = id => captures.add(id); g.canvas.hasPointerCapture = id => captures.has(id);
+  g.canvas.releasePointerCapture = id => { captures.delete(id); releases++; g.canvas.dispatchEvent({ type: 'lostpointercapture', pointerId: id }); };
+  const e = { ...defensePointer(g, g.player), type: 'pointerdown' };
+  g.canvas.dispatchEvent(e); assert.equal(g.input.pointer, g.pointer); assert.ok(captures.has(e.pointerId));
+  g.canvas.dispatchEvent({ type: 'pointercancel', pointerId: e.pointerId });
+  assert.equal(releases, 1); assert.equal(g.pointer, null); assert.equal(g.pendingResult, null);
+  g.canvas.dispatchEvent(e); window.dispatchEvent({ type: 'blur' }); assert.equal(g.pointer, null);
+  g.canvas.dispatchEvent(e); document.hidden = true; document.dispatchEvent({ type: 'visibilitychange' });
+  assert.equal(g.pointer, null); assert.equal(g.lastTime, null);
+  g.canvas.dispatchEvent(e); g.resizeObserver.disconnect = () => { disconnected = true; }; g.destroy();
+  assert.equal(g.pointer, null); assert.ok(disconnected);
+  assert.equal(g.canvas.listenerCount('pointerdown'), 0); assert.equal(window.listenerCount('resize'), 0);
+  assert.equal(window.listenerCount('blur'), 0); assert.equal(document.listenerCount('visibilitychange'), 0);
+  assert.equal(elements.get('help-button').listenerCount('click'), 0);
+  g.canvas.dispatchEvent(e); assert.equal(g.pointer, null);
+});
+
+test('native transport keeps idle highlights inert and uses the released drag point before clearing capture', () => {
+  const { game: g } = fixture();
+  g.index = 5; g.beginHighlight();
+  g.onPointerDown(defensePointer(g, g.player));
+  assert.equal(g.pointer, null); assert.equal(g.defense.phase, 'planning');
+  g.update(.9); g.finish('opponent_escaped', 'Test'); until(g, () => g.state === 'RESULT');
+  g.onPointerDown(defensePointer(g, g.player));
+  assert.equal(g.pointer, null); assert.equal(g.defense.phase, 'planning');
+  start(g, 0);
+  const startPoint = { x: g.ball.x, y: g.ball.y }, end = { x: g.ball.x + 45, y: g.ball.y + 140 };
+  g.onPointerDown(defensePointer(g, startPoint));
+  assert.equal(g.aim.distance, 0);
+  let released = false; g.canvas.hasPointerCapture = () => true;
+  g.canvas.releasePointerCapture = () => { released = true; assert.equal(g.pointer, null); assert.equal(g.state, 'AIMING'); };
+  g.onPointerUp(defensePointer(g, end));
+  assert.ok(released); assert.equal(g.state, 'BALL_CONTACT'); assert.equal(g.pointer, null);
+  assert.ok(g.kick.dy < 0); assert.ok(g.kick.dx < 0); assert.ok(g.kick.power > .16);
+  assert.equal(g.kick, g.play.kick); assert.equal(g.controlled, g.play.controlled);
+});
+
+test('the live renderer bridge preserves facade references and rendering never advances any highlight', () => {
+  for (let index = 0; index < 7; index++) {
+    const { game: g } = fixture(); start(g, index);
+    if (index === 5) { g.defense.beginHold(); g.update(.8); }
+    if (index === 6) { g.defense.selectTarget({ x: 550, y: 410 }); g.update(.4); }
+    const snapshot = () => JSON.stringify({ state: g.state, stateTime: g.stateTime, time: g.time, play: g.play, ball: g.ball, keeper: g.keeper,
+      player: g.player, mates: g.mates, defenders: g.defenders, controller: g.controller, stats: g.stats, outcomes: g.outcomes,
+      pending: g.pendingResult, resolution: g.resolution, trail: g.trail, ripples: g.ripples, particles: g.particles, toast: g.toastTime });
+    const before = snapshot(); g.render(); g.render();
+    assert.equal(snapshot(), before, `highlight ${index + 1}`);
+    const scene = g.renderer.scene;
+    assert.ok(Object.isFrozen(scene)); assert.equal(scene.ball, g.ball); assert.equal(scene.ctx, g.ctx); assert.equal(scene.view, g.view);
+    for (const key of ['game', 'controller', 'session', 'stats', 'pointer']) assert.equal(scene[key], undefined);
+    const ctx = g.ctx; g.ctx = {}; assert.equal(scene.ctx, g.ctx); g.ctx = ctx;
+    const view = g.view; g.view = { ...view, scale: .7 }; assert.equal(scene.view, g.view); g.view = view;
+  }
+});
+
+test('a standalone registration after class loading enters, resolves both ways and retries through bootstrap', () => {
+  const contexts = []; let disposed = 0;
+  const { game: g, elements } = fixture(1000, 740, namespace => {
+    assert.equal(typeof namespace.FootballGame, 'function', 'registration is deliberately later than game.js');
+    const { State } = namespace.Core, outcomes = namespace.OutcomeDefinitions.cutPass;
+    namespace.Highlights.register({ id: 'test-standalone', title: 'Standalone test', category: 'defense', keeperEligible: false,
+      player: [480, 400], mates: [], defenders: [[560, 340]],
+      outcomes: { test_won: { ...outcomes.pass_won, title: 'TEST WON!' }, test_lost: { ...outcomes.pass_through, title: 'TEST LOST!' } },
+      create(context) {
+        contexts.push(context);
+        return {
+          enter() { return { state: State.DEFENDING, toast: 'Test entry', duration: 1 }; },
+          getPresentation() { return { hint: 'Test input' }; },
+          handleInput(input) {
+            if (input.type === 'up') {
+              const kind = input.point.x < 500 ? 'test_won' : 'test_lost';
+              context.complete(kind, 'Test outcome'); context.complete(kind, 'Duplicate');
+            }
+            return { handled: true, capture: input.type === 'down' };
+          },
+          updateResult(dt, resolution) { resolution.elapsed += dt; },
+          dispose() { disposed++; }
+        };
+      }
+    });
+  });
+  assert.equal(g.definitions.length, 8); assert.equal(g.session.definitions, g.definitions);
+  assert.match(elements.get('play-button').innerHTML, /PLAY ALL 8/);
+  assert.equal(g.highlightAdapter, undefined);
+  g.startPractice(7); g.update(.9); g.update(.01);
+  assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('bottom-hint').textContent, 'Test input');
+  const win = defensePointer(g, { x: 480, y: 400 }); g.onPointerDown(win); g.onPointerUp(win);
+  assert.equal(g.pointer, null); assert.equal(g.stats.tackles, 1); assert.equal(g.stats.misses, 0);
+  assert.equal(elements.get('result-title').textContent, 'TEST WON!'); until(g, () => g.state === 'RESULT');
+  assert.match(elements.get('next-button').innerHTML, /RETRY/); g.nextHighlight(); g.update(.9);
+  assert.equal(contexts.length, 2); assert.equal(disposed, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[7], undefined);
+  contexts[0].complete('test_won', 'Old attempt'); assert.equal(g.pendingResult, null); assert.equal(g.stats.tackles, 0);
+  const lose = defensePointer(g, { x: 600, y: 400 }); g.onPointerDown(lose); g.onPointerUp(lose);
+  assert.equal(g.stats.misses, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[7], false);
+  assert.equal(elements.get('result-title').textContent, 'TEST LOST!'); until(g, () => g.state === 'RESULT');
+  g.nextHighlight(); g.update(.9); assert.equal(g.index, 7); assert.equal(g.stats.misses, 0); assert.equal(contexts.length, 3);
+  g.destroy(); assert.equal(disposed, 3);
 });

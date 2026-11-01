@@ -18,6 +18,10 @@
 - Keep gameplay updates separate from rendering and validate interactions against the current game state.
 - Preserve the world-coordinate mapping and device-pixel-ratio handling when changing the renderer or input system.
 
+## Architecture and highlights
+
+Use the boundaries in [Architecture](docs/ARCHITECTURE.md). Register highlights through `create(context)` following [Adding a highlight](docs/HIGHLIGHTS.md); reuse an existing controller for data-only scenarios. Keep registration scripts after their dependencies and before `bootstrap.js`. The game class must remain free of startup side effects, and controllers must use the bounded context rather than a whole-game or DOM reference.
+
 ## Submitting changes
 
 Describe the problem, the resulting behavior, and the checks you ran. For changes to visuals or input, include the viewport sizes and input methods tested, plus screenshots when helpful.

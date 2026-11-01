@@ -7,10 +7,8 @@ The repository includes dependency-free regression tests using Node's built-in t
 From the repository root, with Node.js installed:
 
 ```bash
-node --check src/js/game.js
-node --check src/js/environment.js
-node --check src/js/defense.js
-node --test tests/game.test.cjs
+node scripts/check.cjs
+node --test tests/*.test.cjs
 git diff --check
 ```
 
@@ -21,6 +19,33 @@ Open `index.html` directly and confirm that the stylesheet and game script load 
 ```bash
 python3 -m http.server 8000
 ```
+
+## Repeatable browser regression flow
+
+`tests/browser/seven-highlights.mjs` uses Chrome DevTools Protocol through Node's built-in WebSocket (tested with Node 23). No npm installation is needed. Start a dedicated Chrome instance with a remote-debugging port and a separate temporary profile; the runner operates the first page in that instance. On macOS:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --remote-debugging-port=9227 --user-data-dir=/tmp/shopar-football-qa --no-first-run --no-default-browser-check about:blank
+```
+
+From another terminal at the repository root:
+
+```bash
+node tests/browser/seven-highlights.mjs
+node tests/browser/platform.mjs
+```
+
+The default target is the repository's `file://` entry point. For HTTP/static-subdirectory verification, serve the parent directory with `python3 -m http.server 8000 --directory ..`, then run:
+
+```bash
+GAME_URL=http://127.0.0.1:8000/ShoparFootball/index.html node tests/browser/seven-highlights.mjs
+```
+
+`platform.mjs` separately checks the picker, all three modal dialogs and simulation pause, sound-toggle UI/context reuse, held-pointer cancellation/blur, defensive rotation cancellation and Escape dismissal on desktop, portrait and short landscape. Run the browser scripts sequentially because they operate the same dedicated page.
+
+Use `CDP_URL` to override the default `http://127.0.0.1:9227` browser endpoint. The runner exits nonzero for failed assertions/runtime exceptions, disconnects when finished, and leaves Chrome open for inspection. Stop the dedicated browser and HTTP server after testing.
+
+The flow covers the seven-highlight session, native touch, passes/return passes, interception, hold/release defense, the seventh defensive pass interception, summary, replay, rotation/cancellation, and desktop mouse shooting. It records screenshots under ignored `test-results/browser/`. Attacking flight is fast-forwarded through the same update method; defensive timing uses real-time playback. This is a repeatable flow check, not a replacement for normal-speed shot readability, all seven result variants, physical-device testing, or the broader viewport checklist below.
 
 ## Input and contact
 
@@ -82,7 +107,7 @@ Test full-power bottom contact with left, central, and right aim directions: the
 ## Session flow
 
 - Complete all seven highlights and verify that every resolved chance offers a clear result.
-- Confirm that the sixth result opens the session summary with goals, successful passes, balls won, missed chances, and a score from 0 to 100.
+- Confirm that the seventh result opens the session summary with goals, successful passes, balls won, missed chances, and a score from 0 to 100.
 - Restart before and after a completed pass. Statistics from the current highlight should reset without changing earlier highlights.
 - Restart during the brief goal or save animation. The previous result must not interrupt the restarted highlight.
 - Use **Play Again** and confirm that the session restarts at highlight one with empty statistics.
@@ -104,7 +129,7 @@ Test full-power bottom contact with left, central, and right aim directions: the
 - Start a full session and confirm two highlights have a keeper visibly off the line and three have a deeper keeper. **Play Again** selects a fresh arrangement.
 - Restart an advanced-keeper highlight: the same starting position must return. Receiving or returning a pass must not snap the keeper to the goal line.
 - Shoot low and centrally at an advanced keeper: they should still be able to save. Shoot toward the corner and verify ordinary goals remain possible.
-- Try a soft chip over the exposed keeper. In the one-on-one fixture, 16% power with contact around 87% below center clears the advanced keeper and drops into the net; the same kick can be saved by the deeper keeper.
+- Try a soft chip over the exposed keeper. In the one-on-one fixture, 16% power with contact around 94% below center clears the advanced keeper and drops into the net; the same kick can be saved by the deeper keeper.
 - Watch the advanced keeper react to a chip: they should backpedal gradually, with no jump to a new position. The ball must genuinely clear them before the chip-goal message appears.
 
 ## Venues and weather
@@ -168,6 +193,24 @@ Rotate the device during an unfinished drag and confirm that it cancels without 
 - Finish the seventh action in a full series and verify summary, rating, replay, and returning to a different practice highlight.
 
 ## Validation history
+
+Stage 9 completes modularization with 99 passing tests and the existing gameplay assertions preserved. Class loading is now tested without DOM/startup/registry reads; the final deferred bootstrap is tested for one construction and the inspection instance. Controller-only registrations reject the removed adapter path. A standalone test definition registers after class loading, enters through bootstrap, resolves success/failure through normalized input, displays results, rejects duplicate/stale awards, retries with restored counters, and disposes without any coordinator change. Production still contains seven highlights. The loader injection point moved to just before bootstrap. One-off before/after comparisons match 42 numeric trajectories, 192 result presentations, 14 animated drawing sequences and the full 6,768-frame viewport/venue/weather/motion matrix exactly. Syntax/dependency checks and whitespace checks pass. Both file and HTTP-subdirectory seven-highlight native-touch sessions, desktop mouse, summary/replay/rotation, and all 38 platform checks passed without runtime exceptions. Browser checks used headless Chrome with emulated touch; the series runner's attacking flight fast-forward and physical-device/normal-speed readability limitations remain the separate checklist above.
+
+Stage 8 modularization passes 95 tests with prior assertions unchanged. Complete pose/run-marker presentation was verified before extracting CanvasRenderer. New tests draw frozen scene objects without DOM/game/controller access, verify that previews integrate only a local ball, check world/contact/screen layers and DPR/viewport transforms, exercise pose composition, and confirm that repeated rendering does not advance any of the seven highlights. Existing drawing-method overrides and live context/view references remain intact. Before/after comparisons match 42 numeric trajectories, 192 result presentations, 14 animated Canvas sequences and a 6,768-frame matrix exactly. The matrix covers 1280 × 900, 390 × 844 and 568 × 320, all three venues, four forecasts and both motion preferences; it includes aim strengths, contact appearance/reticle, ground/airborne balls, goal/net/frame/save/held-ball feedback, incoming passes and defensive poses. Full seven-highlight file/HTTP-subdirectory native-touch flows and desktop mouse passed, as did all 38 platform checks. There were no runtime exceptions; the desktop goal-result screenshot was reviewed. These browser runs used headless Chrome and emulated touch; attacking flights in the series runner remain fast-forwarded, and physical-device/normal-speed readability checks are still the separate checklist above.
+
+Stage 7 modularization passes 91 tests with all earlier assertions preserved. Shared attack extraction and reception specialization were checked separately. Added DOM-free controller cases exercise aiming/cancellation, invalid contact, the six-second timeout and delayed kick, AI/integration/collision ordering, net playback and actual incoming-pass reception followed by the shared shot flow. A transport regression checks that intro/result screens remain inert and the final release coordinate is sampled before capture clears. One-off before/after comparisons match 42 numeric trajectories at 30/60/120 FPS, 192 result presentations and 14 attack/reception/defense Canvas command/style sequences exactly. Full seven-highlight native-touch flows and desktop mouse passed on direct files and HTTP under `/ShoparFootball/`; pass/return pass, reception, both defenses, summary/replay and rotation remain intact. The platform runner passed all 38 checks at 1280 × 900, 390 × 844 and 568 × 320. No runtime exceptions occurred; the portrait reception screenshot was reviewed. Browser checks used headless Chrome with native CDP mouse/emulated touch, not physical devices. Attacking flight remains fast-forwarded in the series runner; the normal-speed readability checklist above still applies.
+
+Stage 6 modularization passes 87 tests, retaining all earlier expectations. Viewport, UI and pointer transport were extracted and checked sequentially. New coverage verifies DPR cap/inverse mapping, unchanged-resize capture preservation, changed-resize cancellation, all three bound dialogs pausing and resetting the frame clock, release-before-lost-capture behavior, listener/observer teardown, and standalone DOM-free audio fallback. The audio test fixture now injects the actual DomUI sound callback while retaining its assertions. Before/after comparisons still match 42 trajectories, 192 result presentations and four defensive Canvas command/style sequences. The full seven-highlight file/HTTP-subdirectory flow passed. The new reusable platform runner passed all 38 native mouse/touch checks at 1280 × 900, 390 × 844 and 568 × 320, including sound context reuse, picker/dialogs, pause, hold/cancel/blur, defensive rotation and Escape. Its Escape dispatch includes virtual key code 27 so Chrome performs native dialog dismissal; no application keyboard workaround was added. No runtime exceptions occurred.
+
+Stage 5 modularization passes 83 tests, retaining prior assertions. The shared contract and Cut the Pass migration were checked first (76 cases and 42 exact trajectory comparisons), then Win the Ball migrated. New cases exercise both controllers without DOM/Canvas/game state, neutral hook defaults, bounded/live context fields, stale/disposed completion rejection, persistent variant memory, and a test-only controller registration using common input/cancel/complete/dispose hooks. All 42 before/after numeric trajectories and 192 result presentations still match. Four seeded defensive success/failure sequences produced identical Canvas commands and styles. The complete seven-highlight native-touch/mouse flow passed on `file://` and HTTP under `/ShoparFootball/`. Twelve real-time mouse/touch defensive success/failure checks passed at 1280 × 900, 390 × 844 and 568 × 320 with no runtime exceptions; a short-landscape result screenshot was reviewed. Native pointer transport, platform UI and attacking controllers remain for later stages.
+
+Stage 4 modularization passes 76 tests with every earlier assertion retained. Session extraction was checked first (71 cases and 42 matching before/after trajectories), then result extraction was checked separately. New coverage verifies headless session checkpoints, full-series/practice progression, rating weights/caps, writable game/session aliases, descriptor-driven completion, duplicate guards, banner-template isolation and retry resets. A one-off comparison of 192 before/after combinations matched result text, symbols, labels, sound calls, counters, effects and screen delays exactly; 42 actor/ball/result trajectories still matched at 30/60/120 FPS. The full seven-highlight browser flow passed with native touch and desktop mouse through `file://` and HTTP under `/ShoparFootball/`, including both defensive actions, summary/replay and rotation/cancellation, without runtime exceptions. Physical result animation and clock updates remain at their original call sites.
+
+Stage 3 modularization passes 71 tests, retaining every earlier gameplay expectation. Added coverage verifies the seven ordered IDs/titles/positions, duplicate-ID rejection, list/reference semantics, a test-only eighth startup registration (menu/count/practice/progression/summary), and reordered entry phases, camera/run markers and keeper eligibility. The production catalog still contains exactly seven highlights. Original catalog fields and 42 before/after actor/ball/keeper/result/stat trajectories matched exactly at 30/60/120 FPS. Native-touch seven-highlight flow and desktop mouse shooting passed through `file://` and HTTP under `/ShoparFootball/`, including summary, replay, rotation and cancellation, without runtime exceptions.
+
+Stage 2 modularization passes 67 tests: all existing 66 cases retain their expectations, plus a headless core/physics boundary test. Constants/geometry and physics were extracted in separately verified steps. A one-off before/after comparison of 42 runs across all seven highlights at 30/60/120 FPS found identical actor, ball, keeper, result, and statistics trajectories; sampled geometry also matched exactly. The seven-highlight browser flow passed on `file://` and HTTP under `/ShoparFootball/`, including native touch, mouse shooting, both defensive actions, summary, replay, and rotation/cancellation. No runtime exceptions occurred. AI/collision order, integration substeps, playback scaling, effects and result animation remain at their existing call sites.
+
+The first modularization batch passes all 63 unchanged gameplay cases plus three audio compatibility tests (66 total). The browser flow passed before extraction and afterward through direct-file loading and HTTP under a project subdirectory, with native touch, desktop mouse, both defensive highlights, summary and replay. Actual sound-button toggling, AudioContext reuse and `destroy()` context closure passed in Chrome at 1280 × 900. The extracted AudioSystem class body is identical to its previous implementation; only its module wrapper and constructor reference changed. DOM sound-control writes intentionally remain until the later UI extraction.
 
 The Cut the Pass update passes 63 automated tests. It adds real interception/possession/scoring checks, wrong/no-input/late failures, destination changes, dialog pause, restart/practice retry, and outcome consistency at 30/60/120 FPS. All previous shot, tackle, and original-five-highlight regressions also pass with seven-highlight progression. Chrome checks with native mouse and emulated touch passed success, wrong positioning, late movement, no input, retry, seven-card selection, and returning to the full sequence at 1280 × 900, 390 × 844, and 568 × 320. The short-landscape check scrolls the picker to the seventh card before selecting it. Start/flight/result screenshots were reviewed. A complete native-touch seven-highlight session passed both defensive successes, summary, replay, rotation cancellation, and existing pass/receive flows; desktop mouse shooting also passed. No runtime exceptions occurred.
 
