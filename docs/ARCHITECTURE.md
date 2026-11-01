@@ -10,7 +10,7 @@ The JavaScript uses a strict-mode closure to keep implementation details scoped.
 
 | System | Responsibility |
 | --- | --- |
-| Scenario definitions | Initial positions, descriptions, and coaching tips for all six highlights. |
+| Scenario definitions | Initial positions, descriptions, and coaching tips for all seven highlights. |
 | State machine | Valid interaction phases, overlay visibility, and progression through a session. |
 | Input | Pointer capture, drag direction and power, contact selection, cancellation, and interception destinations. |
 | Physics | Kick velocity, spin, height, friction, collisions, goal-line crossing, and out-of-play checks. |
@@ -32,8 +32,8 @@ The JavaScript uses a strict-mode closure to keep implementation details scoped.
 | `BALL_CONTACT` | Waits for contact or a six-second timeout, then enters `BALL_IN_MOTION`. |
 | `BALL_IN_MOTION` | Advances physics and AI. A completed pass returns to `AIMING`; a resolved chance leads to `RESULT`. |
 | `INTERCEPTION` | Moves an incoming pass and lets the user choose a player destination. Receiving enters `AIMING`; losing the chance leads to `RESULT`. |
-| `DEFENDING` | Chases while the pointer is held and tackles on release when the ball is exposed. Resolution leads to `RESULT`. |
-| `RESULT` | Offers the next highlight, or `SESSION_SUMMARY` after the sixth. |
+| `DEFENDING` | Runs either the hold/release tackle or tap-to-position pass interception. Resolution leads to `RESULT`. |
+| `RESULT` | Offers the next highlight, or `SESSION_SUMMARY` after the seventh. |
 | `SESSION_SUMMARY` | Shows session statistics and offers a fresh session. |
 
 A brief pending-result delay leaves goals and saves visible before the result overlay appears. Restarting a highlight clears pending results and restores the statistics captured at its start.
@@ -104,7 +104,7 @@ The native settings, help, and selection dialogs provide keyboard focus trapping
 
 ## Game interface
 
-The arena occupies the viewport with no document-style header, sidebar, or footer. Score and six-chance progress form a small top HUD. There is no kick-selection dock. A non-interactive power track appears near the bottom only while dragging. Settings contain venue, weather, and sound; the question-mark button opens a short control guide. Instructions are available on demand instead of remaining around the pitch. Scenario names and exposed-keeper warnings appear briefly as toasts. Detailed result/flight announcements remain available to assistive technology, while the visible UI emphasizes the ball, outcome, and next action.
+The arena occupies the viewport with no document-style header, sidebar, or footer. Score and seven-chance progress form a small top HUD. There is no kick-selection dock. A non-interactive power track appears near the bottom only while dragging. Settings contain venue, weather, and sound; the question-mark button opens a short control guide. Instructions are available on demand instead of remaining around the pitch. Scenario names and exposed-keeper warnings appear briefly as toasts. Detailed result/flight announcements remain available to assistive technology, while the visible UI emphasizes the ball, outcome, and next action.
 
 ## Win the Ball
 
@@ -114,8 +114,14 @@ Red starts in possession and dribbles continuously. A primary pointer held anywh
 
 Each new defensive attempt rotates through side, diagonal, and chase placements, with different running speeds, dribble periods (1.25–1.55 seconds), and initial phases. The ball moves farther from the red player's foot during each exposed phase. The ring is drawn around the actual ball, with HOLD TO CHASE, HOLD…, and RELEASE! prompts. Green requires a ball distance of at most 43 world units, a side/front position, and the exposed part of the dribble. A cycle is admitted only when at least 420 ms remain, avoiding a fleeting green on late arrival. Release outside green produces `missed_tackle`; no input, late pursuit, or holding until the 7.2-second deadline produces `opponent_escaped`. A successful release produces `ball_won` immediately, then transfers the ball in the existing lunge animation.
 
-A successful tackle lunges the blue sprite toward the ball, extends a leg, and transfers the ball to its boot. Failure leaves red in possession and moving away. `ball_won` counts as a successful highlight and increments `stats.tackles`, without incrementing goals or starting a counterattack. The summary exposes **BALL WON** and rates the six-highlight session with 14 points per goal/ball win, up to nine pass points, and seven for off-ball reception (capped at 100).
+A successful tackle lunges the blue sprite toward the ball, extends a leg, and transfers the ball to its boot. Failure leaves red in possession and moving away. `ball_won` counts as a successful highlight and increments `stats.tackles`, without incrementing goals or starting a counterattack. The summary exposes **BALL WON** and rates the seven-highlight session with 12 points per goal/ball win, up to nine pass points, and seven for off-ball reception (capped at 100).
 
 ## Direct highlight selection
 
-The picker is populated from `SCENARIOS` and opens from the title, chance counter, results, or summary. It pauses the same simulation/timers as settings and help; closing it preserves the current attempt. `practiceIndex` is null for the full six-highlight sequence, or the chosen scenario index for single-highlight practice. Starting a selection resets session statistics and transient state through the existing highlight setup. Practice results use **RETRY**, which calls the existing restart path instead of advancing or opening the summary. **PLAY ALL 6** clears practice mode and begins the original sequence at highlight one.
+The picker is populated from `SCENARIOS` and opens from the title, chance counter, results, or summary. It pauses the same simulation/timers as settings and help; closing it preserves the current attempt. `practiceIndex` is null for the full seven-highlight sequence, or the chosen scenario index for single-highlight practice. Starting a selection resets session statistics and transient state through the existing highlight setup. Practice results use **RETRY**, which calls the existing restart path instead of advancing or opening the summary. **PLAY ALL 7** clears practice mode and begins the original sequence at highlight one.
+
+## Cut the Pass
+
+`PassInterception` in `defense.js` uses the existing DEFENDING lifecycle, actor sprites, `movePlayer`, `integrateBall`, trail/ripple effects, input transforms, dialog pause, practice/restart, and result flow. It is the seventh independent highlight. Two red players are passer and receiver; blue starts away from their lane. Tap destinations move blue at a bounded speed and can be revised, including during flight. No tackle input or counterattack follows.
+
+The receiver runs from the start. After 2.8 seconds, the passer aims a ground pass ahead of the receiver with the shared rolling physics. Position is tested using swept relative ball/player motion in steps of at most 1/120 second, so selecting a correct destination is insufficient if blue arrives late. A real blue contact produces `pass_won`; the receiver collecting the ball, the pass getting beyond them, or a 6.2-second safety timeout produces `pass_through`. The result animates the ball settling at the actual winner's foot. Both defensive successes increment `stats.tackles` and the existing BALL WON summary; goals are unaffected. The rating grants 12 points per successful highlight plus existing pass/receive bonuses, capped at 100.

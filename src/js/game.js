@@ -27,7 +27,8 @@
     { title: 'The through ball.', tag: 'SEE IT BEFORE THEY DO', description: 'Your teammate is on the move. Find the space, then find the finish.', intro: 'A runner breaks free on the left. Lead the pass!', player: [600, 476], mates: [[340, 390]], defenders: [[516, 308], [730, 278]], tip: 'Pass toward the mint run marker. Your teammate will chase the ball, then you can shoot.' },
     { title: 'Two against two.', tag: 'BETTER TOGETHER', description: 'Two shirts ahead of you. A teammate to your right. Find your way through.', intro: 'Two against two. Combine, or back yourself.', player: [379, 425], mates: [[680, 350]], defenders: [[464, 300], [590, 263]], tip: 'A ground pass across to your teammate can open a better angle. Or take the shot.' },
     { title: 'Read the game.', tag: 'RIGHT PLACE. RIGHT TIME.', description: 'The ball is on its way. Read the pass, get there, and make it yours.', intro: 'An incoming pass! Tap the marked space to meet it.', player: [485, 428], mates: [[200, 320]], defenders: [[737, 292]], tip: 'Tap ahead of the moving ball, near the mint ring. You move automatically.' },
-    { title: 'Win the Ball', kind: 'defense', player: [370, 520], mates: [], defenders: [[535, 350]] }
+    { title: 'Win the Ball', kind: 'defense', player: [370, 520], mates: [], defenders: [[535, 350]] },
+    { title: 'Cut the Pass', kind: 'pass_defense', player: [550, 530], mates: [], defenders: [[340, 350], [760, 370]] }
   ];
 
   class AudioSystem {
@@ -83,7 +84,7 @@
       this.listen($('again-button'), 'click', () => this.startSession());
       this.listen($('next-button'), 'click', () => this.nextHighlight());
       for (const id of ['highlight-button', 'select-highlight-button', 'result-select-button', 'summary-select-button']) this.listen($(id), 'click', () => this.openHighlightPicker());
-      $('highlight-list').innerHTML = SCENARIOS.map((scenario, index) => `<button class="highlight-option${scenario.kind === 'defense' ? ' defensive-option' : ''}" type="button" data-highlight="${index}"><span aria-hidden="true">${String(index + 1).padStart(2, '0')}</span><strong>${scenario.title.replace('.', '')}</strong></button>`).join('');
+      $('highlight-list').innerHTML = SCENARIOS.map((scenario, index) => `<button class="highlight-option${Boolean(scenario.kind) ? ' defensive-option' : ''}" type="button" data-highlight="${index}"><span aria-hidden="true">${String(index + 1).padStart(2, '0')}</span><strong>${scenario.title.replace('.', '')}</strong></button>`).join('');
       this.listen($('highlight-list'), 'click', e => { const button = e.target.closest('button[data-highlight]'); if (button) this.startPractice(Number(button.dataset.highlight)); });
       this.listen($('highlight-close'), 'click', () => $('highlight-dialog').close());
       this.listen($('highlight-dialog'), 'close', () => { this.lastTime = null; });
@@ -198,7 +199,7 @@
       this.resolution = null; this.flight = null; this.banner = null; this.netWobble = 0;
       this.interceptTarget = null; this.interceptSuggested = { x: 500, y: 320 }; this.motionTime = 0; this.shake = 0;
       this.scenarioSnapshot = { ...this.stats };
-      this.defense = s.kind === 'defense' ? new window.DefensiveHighlight(this) : null;
+      this.defense = s.kind === 'defense' ? new window.DefensiveHighlight(this) : s.kind === 'pass_defense' ? new window.PassInterception(this) : null;
     }
     transition(next) {
       this.cancelPointer(this.pointer?.id); this.state = next; this.stateTime = 0;
@@ -265,7 +266,7 @@
       $('chapter-number').textContent = `${this.index + 1}/${SCENARIOS.length}`;
       $('restart-button').disabled = [State.TITLE, State.SESSION_SUMMARY].includes(this.state);
       $('help-button').classList.toggle('hidden', Boolean(this.defense?.finished));
-      this.canvas.setAttribute('aria-label', this.defense ? 'Win the Ball. Hold anywhere on the pitch to chase. Release when the ring around the ball turns green to tackle.' : 'Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike.');
+      this.canvas.setAttribute('aria-label', this.defense?.selectTarget ? 'Cut the Pass. Tap a destination to move your blue player into the passing lane. Intercept the moving ball.' : this.defense ? 'Win the Ball. Hold anywhere on the pitch to chase. Release when the ring around the ball turns green to tackle.' : 'Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike.');
       $('bottom-hint').textContent = this.state === State.INTERCEPTION ? 'Tap the ring to receive.' : this.state === State.AIMING ? 'Drag back to aim. Release, then tap the ball.' : this.state === State.BALL_CONTACT ? 'Tap a point on the ball.' : '';
       [...$('chapter-progress').children].forEach((el, i) => { el.className = i === this.index ? 'current' : this.outcomes[i] === true ? 'done' : this.outcomes[i] === false ? 'failed' : ''; });
       this.updateFlightUI();
@@ -278,6 +279,7 @@
       if (this.state === State.TITLE) { this.startSession(); return; }
       if (this.state === State.DEFENDING && !this.defense.finished) {
         e.preventDefault();
+        if (this.defense.selectTarget) { this.defense.selectTarget(p); this.toastTime = 0; return; }
         this.pointer = { id: e.pointerId, start: p, last: p }; this.canvas.setPointerCapture(e.pointerId);
         this.defense.beginHold(); this.toastTime = 0; return;
       }
@@ -367,13 +369,13 @@
     }
     finish(kind, detail) {
       if (this.pendingResult || [State.RESULT, State.SESSION_SUMMARY].includes(this.state)) return;
-      const success = kind === 'goal' || kind === 'ball_won'; this.outcomes[this.index] = success;
+      const success = kind === 'goal' || kind === 'ball_won' || kind === 'pass_won'; this.outcomes[this.index] = success;
       this.resolution = { kind, elapsed: 0, netHit: false, landing: null, crossing: { x: this.ball.x, y: this.ball.y, z: this.ball.z } };
       const chip = success && this.flight?.clearedKeeper;
-      if (kind === 'ball_won') {
+      if (kind === 'ball_won' || kind === 'pass_won') {
         this.stats.tackles++; this.audio.play('tap');
         this.ripples.push({ x: this.ball.x, y: this.ball.y, age: 0 });
-        this.banner = { text: 'BALL WON!', sub: 'CLEAN TACKLE', color: '#d0f69a', time: 1.4, max: 1.4 };
+        this.banner = { text: kind === 'pass_won' ? 'INTERCEPTED!' : 'BALL WON!', sub: kind === 'pass_won' ? 'PASS CUT OUT' : 'CLEAN TACKLE', color: '#d0f69a', time: 1.4, max: 1.4 };
       } else if (success) {
         this.stats.goals++; this.audio.play('goal'); this.celebrate(); this.flash = .2;
         this.banner = { text: 'GOAL!', sub: chip ? 'CHIPPED OVER THE KEEPER' : 'BELOW THE BAR. IN THE NET.', color: '#d0f69a', time: 2.4, max: 2.4 };
@@ -390,18 +392,19 @@
         };
         bMap.missed_tackle = { text: 'MISSED TACKLE!', sub: 'POSITION · TIMING', color: '#ffb074' };
         bMap.opponent_escaped = { text: 'OPPONENT ESCAPED!', sub: 'CUT OFF THE RUN', color: '#ff8b79' };
+        bMap.pass_through = { text: 'PASS GOT THROUGH!', sub: 'CLOSE THE LANE SOONER', color: '#ff8b79' };
         bMap.bar = { text: 'CROSSBAR!', sub: 'OFF THE FRAME, BACK OUT', color: '#ffb74d' };
         bMap.post = { text: 'OFF THE POST!', sub: 'THE BALL STAYS OUT', color: '#ffb74d' };
         const b = bMap[kind] || { text: 'CHANCE MISSED!', sub: 'KEEP YOUR HEAD UP', color: '#f48fb1' };
         this.banner = { ...b, time: 2.0, max: 2.0 };
       }
       const titles = { goal: chip ? 'Over the keeper!' : 'GOAL!', save: 'Saved!', blocked: 'Blocked!', intercepted: 'Intercepted!', wide: 'Wide!', high: 'Over the crossbar.', bar: 'Crossbar!', post: 'Off the post!', weak: 'Too weak!', lost: 'Chance missed!' };
-      Object.assign(titles, { ball_won: 'BALL WON!', missed_tackle: 'MISSED TACKLE!', opponent_escaped: 'OPPONENT ESCAPED!' });
+      Object.assign(titles, { ball_won: 'BALL WON!', missed_tackle: 'MISSED TACKLE!', opponent_escaped: 'OPPONENT ESCAPED!', pass_won: 'INTERCEPTED!', pass_through: 'PASS GOT THROUGH!' });
       $('result-title').textContent = titles[kind] || 'The chance slips away.';
       $('result-symbol').textContent = success ? '↗' : kind === 'save' ? '⊘' : '↘';
       $('result-symbol').style.color = success ? 'var(--mint)' : '#f4ae8f';
       $('result-kicker').textContent = `${this.index + 1}/${SCENARIOS.length}`;
-      $('result-detail').textContent = kind === 'ball_won' ? detail : success ? (chip ? 'Your chip cleared the goalkeeper and crossed below the bar.' : 'The ball crossed the goal line between the posts and below the bar.') : detail;
+      $('result-detail').textContent = this.defense ? detail : success ? (chip ? 'Your chip cleared the goalkeeper and crossed below the bar.' : 'The ball crossed the goal line between the posts and below the bar.') : detail;
       $('next-button').innerHTML = this.practiceIndex !== null ? 'RETRY <span>↻</span>' : 'NEXT <span>→</span>';
       // Leave the action visible before bringing up the result card.
       this.pendingResult = { kind, wait: this.defense ? 1.3 : success ? 2.1 : ['high', 'wide'].includes(kind) ? 2.4 : 1.35 };
@@ -419,7 +422,7 @@
       this.player.celebration = 3.2; this.mates.forEach(p => p.celebration = 3.2);
     }
     showSummary() {
-      const score = clamp(Math.round((this.stats.goals + this.stats.tackles) * 14 + Math.min(this.stats.passes, 3) * 3 + this.stats.receives * 7), 0, 100);
+      const score = clamp(Math.round((this.stats.goals + this.stats.tackles) * (84 / SCENARIOS.length) + Math.min(this.stats.passes, 3) * 3 + this.stats.receives * 7), 0, 100);
       $('rating').textContent = score; $('total-goals').textContent = this.stats.goals; $('total-passes').textContent = this.stats.passes; $('total-misses').textContent = this.stats.misses;
       $('total-tackles').textContent = this.stats.tackles;
       $('summary-title').textContent = 'FULL TIME';
@@ -453,7 +456,7 @@
         if (this.pendingResult.wait <= 0) { this.pendingResult = null; this.transition(State.RESULT); } return;
       }
       if (this.state === State.HIGHLIGHT_INTRO && this.stateTime > .85) {
-        if (this.defense) { this.transition(State.DEFENDING); this.toast('Hold to chase · release when green', 2.4); }
+        if (this.defense) { this.transition(State.DEFENDING); this.toast(this.defense.instruction || 'Hold to chase · release when green', 2.4); }
         else if (this.index === 4) this.startInterception(); else { this.transition(State.AIMING); this.updatePower(0); }
       } else if (this.state === State.DEFENDING) {
         this.defense.update(dt);
@@ -479,7 +482,7 @@
       $('flight-meter').classList.toggle('hidden', !active);
       if (this.resolution && !followingMiss) {
         const messages = { goal: this.flight?.clearedKeeper ? 'GOAL · OVER THE KEEPER, INTO THE NET' : 'GOAL · BELOW THE BAR, INTO THE NET', save: 'SAVED · THE KEEPER HAS IT', high: 'OVER THE BAR · GOAL KICK', wide: 'WIDE · GOAL KICK', bar: 'CROSSBAR · THE BALL COMES BACK OUT', post: 'OFF THE POST · NO GOAL', blocked: 'BLOCKED BY THE DEFENDER', intercepted: 'PASS INTERCEPTED', weak: 'THE BALL RUNS OUT OF PACE', lost: 'CHANCE MISSED' };
-        Object.assign(messages, { ball_won: 'BALL WON!', missed_tackle: 'MISSED TACKLE!', opponent_escaped: 'OPPONENT ESCAPED!' });
+        Object.assign(messages, { ball_won: 'BALL WON!', missed_tackle: 'MISSED TACKLE!', opponent_escaped: 'OPPONENT ESCAPED!', pass_won: 'INTERCEPTED!', pass_through: 'PASS GOT THROUGH!' });
         $('bottom-hint').textContent = messages[this.resolution.kind]; return;
       }
       if (!active) return;
@@ -882,9 +885,9 @@
     }
     drawPlayer(c, p) {
       const isControlled = p === this.controlled && ![State.TITLE, State.BALL_CONTACT].includes(this.state);
-      const defenseMoving = this.defense && (p === this.player ? this.defense.phase === 'running' : p === this.defense.opponent && (!this.defense.finished || !this.defense.tackle?.success));
+      const defenseMoving = this.defense?.isMoving ? this.defense.isMoving(p) : this.defense && (p === this.player ? this.defense.phase === 'running' : p === this.defense.opponent && (!this.defense.finished || !this.defense.tackle?.success));
       const moving = [State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.state) || this.state === State.DEFENDING && defenseMoving;
-      const isShooting = this.kicker === p && this.motionTime < 0.28;
+      const isShooting = this.kicker === p && this.motionTime < 0.28 || this.defense?.passer === p && this.defense.phase === 'passing' && this.defense.elapsed - this.defense.passAt < .28;
       const celebration = p.celebration > 0;
       const hop = celebration ? -Math.abs(Math.sin(p.celebration * 10)) * 9 : 0;
       const stride = moving ? Math.sin(p.step * 1.4) * 4.5 : 0;

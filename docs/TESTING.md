@@ -42,7 +42,8 @@ python3 -m http.server 8000
 | From distance | Powerful shots reach the goal; poor power or excessive loft can lose the chance. |
 | The through ball | A pass toward the run marker can be received; control then transfers to the receiver for the next action. |
 | Two against two | Aim freely toward goal or teammates; teammates can receive and return a pass; defenders can intercept passes and block shots. |
-| Win the Ball | Draw an intercepting route from blue; red keeps dribbling. A well-positioned green tap wins possession; bad timing misses; a wrong/late route lets red escape. |
+| Win the Ball | Hold to chase, release on green to win possession; early/late release misses; no input or holding too long lets red escape. |
+| Cut the Pass | Tap to position blue, meet the live red pass automatically; wrong placement, late movement or no input lets it through. |
 | Read the game | An early tap near the marked space can meet the pass; poor positioning or no input loses the chance. |
 
 ## Player, ball, and goal proportions
@@ -80,7 +81,7 @@ Test full-power bottom contact with left, central, and right aim directions: the
 
 ## Session flow
 
-- Complete all six highlights and verify that every resolved chance offers a clear result.
+- Complete all seven highlights and verify that every resolved chance offers a clear result.
 - Confirm that the sixth result opens the session summary with goals, successful passes, balls won, missed chances, and a score from 0 to 100.
 - Restart before and after a completed pass. Statistics from the current highlight should reset without changing earlier highlights.
 - Restart during the brief goal or save animation. The previous result must not interrupt the restarted highlight.
@@ -89,14 +90,14 @@ Test full-power bottom contact with left, central, and right aim directions: the
 
 ## Win the Ball
 
-- Start the sixth highlight through NEXT or CHOOSE HIGHLIGHT. Verify 6/6, red possession, and HOLD TO CHASE next to the ball.
+- Start the sixth highlight through NEXT or CHOOSE HIGHLIGHT. Verify 6/7, red possession, and HOLD TO CHASE next to the ball.
 - Hold anywhere on the pitch; blue must pursue without needing a path or steering. Move the held pointer and add a secondary pointer: neither should affect pursuit or trigger a tackle.
 - Release when the ball ring turns green and says RELEASE! Confirm immediate BALL WON!, a visible lunge, and transferred possession. The animation must not reverse the decision.
 - Release immediately, or just after green: both must produce MISSED TACKLE! while red retains possession. Holding through every opportunity and doing nothing must produce OPPONENT ESCAPED! within ten seconds.
 - Retry through all three approaches. Each must have a readable opportunity; the same memorized hold duration should not fit every variant.
 - Repeat with mouse and touch, portrait and short landscape. The ball ring and prompt must remain readable and follow the actual ball.
 - Cancel a held pointer, rotate, blur the page, or open a dialog: pursuit must stop without tackling. Dialogs pause the clock. Resume with a fresh hold. Restart must clear the pointer, result, old possession, and statistics.
-- Follow NEXT after the sixth result. Summary counts ball wins separately from goals and includes them in the rating; PLAY AGAIN resets all outcomes and statistics.
+- Follow NEXT after the seventh result. Summary counts ball wins separately from goals and includes them in the rating; PLAY AGAIN resets all outcomes and statistics.
 
 ## Goalkeeper positions
 
@@ -144,20 +145,31 @@ Rotate the device during an unfinished drag and confirm that it cancels without 
 
 - Confirm the arena fills the viewport without a page heading, sidebar, footer, coaching card, or scenario list.
 - Check the top score, chance counter, restart, and settings controls for overlap at 320 × 480 through 1920 × 1080.
-- Check all six scenarios: no shoot/pass buttons or fixed bottom dock should appear. The power indicator should appear while dragging and disappear after release or cancellation.
+- Check all seven scenarios: no shoot/pass buttons or fixed bottom dock should appear. The power indicator should appear while dragging and disappear after release or cancellation.
 - Open **?** from the title screen and during contact selection. Verify pause/resume and both close controls. The big contact ball must fit between its heading and timer.
 - In settings, change venue/weather and toggle sound. Confirm these remain usable without a permanent toolbar or side panel.
-- Play a complete six-highlight session with native touch, including passes and off-ball reception. Check result/summary/replay buttons on short portrait and landscape screens.
+- Play a complete seven-highlight session with native touch, including passes and off-ball reception. Check result/summary/replay buttons on short portrait and landscape screens.
 
 ## Highlight picker and practice
 
-- Open **CHOOSE HIGHLIGHT** on the title screen and play each of the six entries directly. The first four must enter aiming, the fifth off-ball reception, and the sixth defense.
-- Win or lose the defensive practice attempt, then use **RETRY**. The same opponent/player placement must return with a clean timer, route, result, and statistics.
+- Open **CHOOSE HIGHLIGHT** on the title screen and play each of the seven entries directly. The first four must enter aiming, the fifth off-ball reception, and the sixth hold/release defense and the seventh pass interception.
+- Win or lose the defensive practice attempt, then use **RETRY**. The defensive action must restart with a clean timer, target, result, and statistics; Win the Ball rotates its approach variant.
 - Use the top-left chance counter during play, or **CHOOSE HIGHLIGHT** on a result/summary, to select a different action. The picker must pause the current attempt; closing it should resume without a reset.
-- Select **PLAY ALL 6** from the picker. It must start a fresh full sequence at 1/6, with normal **NEXT** progression and the final summary after the sixth highlight.
-- At small portrait and short landscape sizes, scroll the picker and reach all six cards plus **PLAY ALL 6**. Check title/result/summary selection buttons for clipping.
+- Select **PLAY ALL 7** from the picker. It must start a fresh full sequence at 1/7, with normal **NEXT** progression and the final summary after the seventh highlight.
+- At small portrait and short landscape sizes, scroll the picker and reach all seven cards plus **PLAY ALL 7**. Check title/result/summary selection buttons for clipping.
+
+## Cut the Pass
+
+- Choose the seventh card directly and enter it via NEXT after Win the Ball; verify seven cards/dots and 7/7 progress.
+- Tap into the passing lane. Blue must run rather than teleport while the receiver continues moving. Change the destination before the pass and verify the run redirects.
+- Meet the live pass: INTERCEPTED! must transfer possession and add one BALL WON, without awarding a goal or starting a shot.
+- Do nothing, move away, or move into the lane after the ball has passed: PASS GOT THROUGH! must leave red in possession.
+- Check mouse, touch, portrait, and short landscape; the selection card must be reachable by scrolling. Verify settings/help/picker pause and restart/retry state clearing.
+- Finish the seventh action in a full series and verify summary, rating, replay, and returning to a different practice highlight.
 
 ## Validation history
+
+The Cut the Pass update passes 63 automated tests. It adds real interception/possession/scoring checks, wrong/no-input/late failures, destination changes, dialog pause, restart/practice retry, and outcome consistency at 30/60/120 FPS. All previous shot, tackle, and original-five-highlight regressions also pass with seven-highlight progression. Chrome checks with native mouse and emulated touch passed success, wrong positioning, late movement, no input, retry, seven-card selection, and returning to the full sequence at 1280 × 900, 390 × 844, and 568 × 320. The short-landscape check scrolls the picker to the seventh card before selecting it. Start/flight/result screenshots were reviewed. A complete native-touch seven-highlight session passed both defensive successes, summary, replay, rotation cancellation, and existing pass/receive flows; desktop mouse shooting also passed. No runtime exceptions occurred.
 
 The hold/release defensive redesign passes 57 automated tests, including three approach variants, readable green windows at 30/60/120 FPS, release timing, actual positioning, no-input/held-input escape, pointer cancellation, secondary pointers, dialog pause, restart, retry, and summary scoring. Chrome checks passed all three approaches with native mouse and emulated touch at 1280 × 900, 390 × 844, and 568 × 320. Early release, gesture cancellation, and holding until escape also passed with no runtime errors. The diagonal rhythm was adjusted after comparing actual hold times and rechecked at all three sizes. Screenshots of the ball ring and release prompt were reviewed. A complete native-touch six-highlight session passed through passes, reception, the new defensive hold/release, summary, and replay; desktop mouse shooting also passed.
 

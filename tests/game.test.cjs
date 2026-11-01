@@ -37,7 +37,7 @@ function fixture(width = 1000, height = 740) {
     getElementById: id => {
       if (!elements.has(id)) {
         const node = element(id);
-        if (id === 'chapter-progress') node.children = Array.from({ length: 6 }, () => element());
+        if (id === 'chapter-progress') node.children = Array.from({ length: 7 }, () => element());
         elements.set(id, node);
       }
       return elements.get(id);
@@ -242,7 +242,7 @@ test('a teammate can receive a kick in a long-shot highlight without an action s
   assert.notEqual(g.controlled, g.player);
 });
 
-test('a missed contact window and the complete six-highlight session resolve without freezing', () => {
+test('a missed contact window and the complete seven-highlight session resolve without freezing', () => {
   const { game: g } = fixture();
   for (let index = 0; index < 5; index++) {
     start(g, index);
@@ -263,6 +263,10 @@ test('a missed contact window and the complete six-highlight session resolve wit
   assert.equal(g.state, 'DEFENDING');
   until(g, () => g.state === 'RESULT');
   assert.equal(g.stats.misses + g.stats.goals + g.stats.tackles, 6);
+  g.nextHighlight(); g.update(.9);
+  assert.equal(g.index, 6);
+  until(g, () => g.state === 'RESULT');
+  assert.equal(g.stats.misses + g.stats.goals + g.stats.tackles, 7);
   g.nextHighlight();
   assert.equal(g.state, 'SESSION_SUMMARY');
 });
@@ -497,7 +501,7 @@ function releaseTackle(g, id = 17) { g.onPointerUp(defensePointer(g, { x: 800, y
 
 test('Win the Ball starts sixth and holding anywhere follows the moving opponent', () => {
   const { game: g, elements } = fixture(); start(g, 5);
-  assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('chapter-number').textContent, '6/6');
+  assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('chapter-number').textContent, '6/7');
   const original = { ...g.player }, redX = g.defense.opponent.x;
   holdChase(g); assert.equal(g.defense.phase, 'running'); assert.ok(g.pointer);
   g.update(.5);
@@ -517,8 +521,9 @@ test('releasing on green wins immediately, transfers possession once and contrib
   until(g, () => g.state === 'RESULT');
   assert.ok(Math.hypot(g.ball.x - g.player.x, g.ball.y - g.player.y) < 30);
   assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) > 20);
+  g.nextHighlight(); g.update(.9); until(g, () => g.state === 'RESULT');
   g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
-  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 14);
+  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 12);
 });
 
 test('early release and release after green are missed tackles', () => {
@@ -614,17 +619,17 @@ test('moving the held finger and secondary pointers cannot tackle or steer', () 
   assert.equal(g.resolution.kind, 'ball_won');
 });
 
-test('all six highlights can be opened directly as independent practice attempts', () => {
+test('all seven highlights can be opened directly as independent practice attempts', () => {
   const { game: g, elements } = fixture();
-  for (let index = 0; index < 6; index++) {
+  for (let index = 0; index < 7; index++) {
     g.stats.goals = 3; g.outcomes[0] = true;
     g.openHighlightPicker(); g.startPractice(index);
     assert.equal(elements.get('highlight-dialog').open, false);
     assert.equal(g.practiceIndex, index); assert.equal(g.index, index);
     assert.equal(g.stats.goals, 0); assert.equal(g.outcomes.length, 0);
     g.update(.9);
-    assert.equal(g.state, index === 5 ? 'DEFENDING' : index === 4 ? 'INTERCEPTION' : 'AIMING');
-    assert.equal(elements.get('chapter-number').textContent, `${index + 1}/6`);
+    assert.equal(g.state, index >= 5 ? 'DEFENDING' : index === 4 ? 'INTERCEPTION' : 'AIMING');
+    assert.equal(elements.get('chapter-number').textContent, `${index + 1}/7`);
   }
 });
 
@@ -649,7 +654,7 @@ test('closing the selection menu resumes the same encounter without changing its
   assert.equal(g.practiceIndex, null);
 });
 
-test('play all exits practice and restores normal six-highlight progression', () => {
+test('play all exits practice and restores normal seven-highlight progression', () => {
   const { game: g } = fixture(); g.startPractice(5); g.update(.9);
   g.stats.tackles = 1; g.beginSession(); g.update(.9);
   assert.equal(g.practiceIndex, null); assert.equal(g.index, 0); assert.equal(g.defense, null);
@@ -660,7 +665,7 @@ test('play all exits practice and restores normal six-highlight progression', ()
 
 test('invalid direct selections leave the current highlight untouched', () => {
   const { game: g } = fixture(); start(g);
-  for (const value of [-1, 6, NaN, 1.5, '5', null]) g.startPractice(value);
+  for (const value of [-1, 7, NaN, 1.5, '5', null]) g.startPractice(value);
   assert.equal(g.index, 0); assert.equal(g.practiceIndex, null); assert.equal(g.state, 'AIMING');
 });
 
@@ -752,4 +757,74 @@ test('a ball bouncing before the goal stays live and can score with immediate im
   assert.ok(ripple.strength > 0 && g.ball.vz > 0);
   until(g, () => g.pendingResult);
   assert.equal(g.resolution.kind, 'goal'); assert.equal(g.stats.goals, 1);
+});
+
+function choosePassPosition(g, point) {
+  const event = defensePointer(g, point); g.onPointerDown(event); g.onPointerUp(event);
+}
+
+test('Cut the Pass opens seventh with two red players and tap-to-move input', () => {
+  const { game: g, elements } = fixture(); start(g, 6);
+  assert.equal(elements.get('chapter-number').textContent, '7/7');
+  assert.equal(g.state, 'DEFENDING'); assert.equal(g.defenders.length, 2);
+  const original = { ...g.player }, receiverY = g.defense.receiver.y;
+  choosePassPosition(g, { x: 550, y: 410 }); assert.equal(g.pointer, null);
+  g.update(.4); assert.ok(g.player.y < original.y && g.player.y > 410);
+  assert.ok(g.defense.receiver.y > receiverY); assert.equal(g.pendingResult, null); g.render();
+});
+
+test('a real interception awards one ball win, transfers possession and reaches the summary', () => {
+  const { game: g, elements } = fixture(); start(g, 6); choosePassPosition(g, { x: 550, y: 410 });
+  until(g, () => g.pendingResult);
+  assert.equal(g.resolution.kind, 'pass_won'); assert.equal(elements.get('result-title').textContent, 'INTERCEPTED!');
+  assert.equal(g.stats.tackles, 1); assert.equal(g.stats.goals, 0); assert.equal(g.stats.misses, 0);
+  assert.ok(Math.hypot(g.ball.x - g.player.x, g.ball.y - g.player.y) < 24);
+  g.finish('pass_won'); assert.equal(g.stats.tackles, 1);
+  until(g, () => g.state === 'RESULT');
+  assert.ok(Math.hypot(g.ball.x - g.possessionPosition(g.player).x, g.ball.y - g.possessionPosition(g.player).y) < 1);
+  g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
+  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 12);
+});
+
+test('no input, wrong positioning and late movement let the receiver collect the pass', () => {
+  for (const mode of ['none', 'wrong', 'late']) {
+    const { game: g, elements } = fixture(); start(g, 6);
+    if (mode === 'wrong') choosePassPosition(g, { x: 700, y: 550 });
+    if (mode === 'late') { g.update(3.4); choosePassPosition(g, { x: 550, y: 410 }); }
+    const elapsed = until(g, () => g.state === 'RESULT');
+    assert.equal(g.resolution.kind, 'pass_through'); assert.equal(g.stats.tackles, 0); assert.equal(g.stats.misses, 1);
+    assert.equal(elements.get('result-title').textContent, 'PASS GOT THROUGH!');
+    assert.ok(elapsed < 8);
+    assert.ok(Math.hypot(g.ball.x - g.defense.receiver.x, g.ball.y - g.defense.receiver.y) < 30);
+  }
+});
+
+test('changing destination before the pass redirects the run without teleporting', () => {
+  const { game: g } = fixture(); start(g, 6);
+  choosePassPosition(g, { x: 700, y: 550 }); g.update(.5); const position = { ...g.player };
+  choosePassPosition(g, { x: 550, y: 410 });
+  assert.equal(g.player.x, position.x); assert.equal(g.player.y, position.y);
+  until(g, () => g.pendingResult); assert.equal(g.resolution.kind, 'pass_won');
+});
+
+test('the interception clock pauses in dialogs and restart/practice retry clears all state', () => {
+  const { game: g, elements } = fixture(); g.startPractice(6); g.update(.9);
+  choosePassPosition(g, { x: 550, y: 410 }); g.update(1);
+  const snapshot = JSON.stringify({ b: g.ball, p: g.player, t: g.defense.elapsed });
+  g.openHighlightPicker(); g.update(10);
+  assert.equal(JSON.stringify({ b: g.ball, p: g.player, t: g.defense.elapsed }), snapshot);
+  elements.get('highlight-dialog').close();
+  until(g, () => g.state === 'RESULT'); assert.equal(g.stats.tackles, 1);
+  assert.match(elements.get('next-button').innerHTML, /RETRY/); g.nextHighlight(); g.update(.9);
+  assert.equal(g.index, 6); assert.equal(g.defense.target, null); assert.equal(g.defense.elapsed, 0);
+  assert.equal(g.resolution, null); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[6], undefined);
+});
+
+test('pass interception success and failure agree at 30, 60 and 120 FPS', () => {
+  for (const fps of [30, 60, 120]) for (const win of [true, false]) {
+    const { game: g } = fixture(); start(g, 6);
+    choosePassPosition(g, { x: 550, y: win ? 410 : 530 });
+    for (let i = 0; i < fps * 8 && g.state !== 'RESULT'; i++) g.update(1 / fps);
+    assert.equal(g.state, 'RESULT'); assert.equal(g.resolution.kind, win ? 'pass_won' : 'pass_through'); g.render();
+  }
 });

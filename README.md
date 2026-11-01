@@ -1,6 +1,6 @@
 # Shopar Football
 
-A gesture-driven football game built around six short highlights. Pull back to aim, choose your contact point, and watch your shot or pass unfold.
+A gesture-driven football game built around seven short highlights. Pull back to aim, choose your contact point, and watch your shot or pass unfold.
 
 Built with HTML5 Canvas, vanilla JavaScript, and CSS. No framework, game engine, backend, external assets, or build step is required.
 
@@ -20,7 +20,7 @@ To try the game on a phone or tablet, connect it to the same local network as yo
 
 ## Features
 
-- Six playable scenarios: one on one, long shot, through ball, two against two, off-ball reception, and **Win the Ball**.
+- Seven playable scenarios: one on one, long shot, through ball, two against two, off-ball reception, **Win the Ball**, and **Cut the Pass**.
 - Drag direction and distance control kick direction and power.
 - A second tap sets the contact point, affecting actual curve and loft.
 - Ball physics include contact-dependent pace, airborne curve, diminishing bounces, rolling friction, collisions, saves, and out-of-play detection.
@@ -36,7 +36,7 @@ To try the game on a phone or tablet, connect it to the same local network as yo
 
 Use the weather icon in the top-right corner to open **Match settings**, choose your pitch/weather, and toggle sound. The match pauses while settings or **?** help is open. Choices carry across highlights and are remembered on this browser when local storage is available. The environments change the scene; shot physics and goal dimensions remain consistent.
 
-1. Select **PLAY ALL 6** for a full session, or **CHOOSE HIGHLIGHT** to practise any one of the six scenarios. Use **?** for the quick control guide.
+1. Select **PLAY ALL 7** for a full session, or **CHOOSE HIGHLIGHT** to practise any one of the seven scenarios. Use **?** for the quick control guide.
 2. Drag backward from near the ball. The kick travels opposite your drag; a longer pull adds power. Every kick uses the same controls and physics: aim at the goal to shoot or toward a teammate to combine.
 3. Release to open the close-up ball, then tap your contact point:
 
@@ -56,11 +56,13 @@ For a chip, tap moderately below center. Combining strong power with contact nea
 
 For the off-ball highlight, tap a destination on the pitch. Your player moves automatically; reach the incoming pass before it gets away. After a teammate receives a pass, control transfers to that player.
 
-To test a particular scenario, open **CHOOSE HIGHLIGHT** and select its name. **Win the Ball** opens the defensive action immediately. In single-highlight practice, the result button is **RETRY**, which resets that same scenario and its statistics. Use the top-left chance counter or the result/summary selection button to switch highlights; closing the menu resumes the current attempt. **PLAY ALL 6** returns to the normal sequence with a fresh session.
+To test a particular scenario, open **CHOOSE HIGHLIGHT** and select its name. **Win the Ball** opens the defensive action immediately. In single-highlight practice, the result button is **RETRY**, which resets that same scenario and its statistics. Use the top-left chance counter or the result/summary selection button to switch highlights; closing the menu resumes the current attempt. **PLAY ALL 7** returns to the normal sequence with a fresh session.
 
 For **Win the Ball**, hold anywhere on the pitch to chase the red opponent. Keep watching the ball: release your finger or mouse button when its ring turns green and says **RELEASE!**. Early or late release misses; holding through every opportunity or starting too late lets the opponent escape. Retries rotate through side, diagonal, and chase approaches with different dribble rhythms. Cancelled gestures stop pursuit safely without tackling. The highlight ends at the result screen, without a counterattack.
 
-Use **↻** in the top-right corner to retry the current highlight and reset its statistics. After six highlights, review your goals, completed passes, balls won, missed chances, and performance score. **PLAY AGAIN** starts a fresh session.
+For **Cut the Pass**, tap a destination on the pitch to move blue into the lane between the two red players. The receiver keeps running and the passer releases the ball after a short preparation. Change your destination as needed; interception happens automatically when you reach the live ball. A successful interception ends the highlight and adds one to **BALL WON**, without starting an attack.
+
+Use **↻** in the top-right corner to retry the current highlight and reset its statistics. After seven highlights, review your goals, completed passes, balls won, missed chances, and performance score. **PLAY AGAIN** starts a fresh session.
 
 During a kick, watch the ball separate from its ground shadow and use the height meter's **BAR** marker to judge its flight. Play slows near the goal. Goals continue into the net, saves end with the keeper holding the ball, and shots over the bar continue into the open space behind the goal. The camera stays on the goal; high misses leave the frame naturally and the result follows shortly after. A green tick marks a successful crossing; frame hits rebound and are reported separately.
 
@@ -73,7 +75,7 @@ ShoparFootball/
 │   ├── css/
 │   │   └── style.css       # Presentation and responsive layouts
 │   └── js/
-│       ├── defense.js      # Defensive hold/release, dribble, tackle timing, and animation
+│       ├── defense.js      # Defensive tackle and pass-interception highlights
 │       ├── environment.js  # Venue palettes, scenery, weather, and preferences
 │       └── game.js         # Input, state, physics, AI, audio, and rendering
 ├── docs/
