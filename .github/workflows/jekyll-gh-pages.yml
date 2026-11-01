@@ -31,6 +31,7 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check src/js/environment.js
+          node --check src/js/defense.js
           node --check src/js/game.js
       - name: Run gameplay regression tests
         run: node --test tests/game.test.cjs

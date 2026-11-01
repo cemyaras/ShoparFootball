@@ -7,6 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../src/js/game.js'), 'utf8');
+const defenseSource = fs.readFileSync(path.join(__dirname, '../src/js/defense.js'), 'utf8');
 const environmentSource = fs.readFileSync(path.join(__dirname, '../src/js/environment.js'), 'utf8');
 
 // A minimal browser surface for deterministic game/state tests. Visual QA uses a real browser.
@@ -21,6 +22,7 @@ function fixture(width = 1000, height = 740) {
       textContent: '', innerHTML: '', style: {}, dataset: {}, children: [],
       classList: { toggle: noop, add: noop, remove: noop },
       addEventListener: noop, removeEventListener: noop, setAttribute: noop,
+      showModal() { this.open = true; }, close() { this.open = false; },
       getBoundingClientRect: () => ({ x: 0, y: 0, left: 0, top: 0, width, height }),
       querySelectorAll: () => [],
       querySelector: selector => {
@@ -35,7 +37,7 @@ function fixture(width = 1000, height = 740) {
     getElementById: id => {
       if (!elements.has(id)) {
         const node = element(id);
-        if (id === 'chapter-progress' || id === 'scenario-list') node.children = Array.from({ length: 5 }, () => element());
+        if (id === 'chapter-progress') node.children = Array.from({ length: 6 }, () => element());
         elements.set(id, node);
       }
       return elements.get(id);
@@ -47,6 +49,7 @@ function fixture(width = 1000, height = 740) {
   };
   const sandbox = { window, document, requestAnimationFrame: () => 1, cancelAnimationFrame: noop, ResizeObserver: class { observe() {} disconnect() {} } };
   vm.runInNewContext(environmentSource, sandbox, { filename: 'environment.js' });
+  vm.runInNewContext(defenseSource, sandbox, { filename: 'defense.js' });
   vm.runInNewContext(source, sandbox, { filename: 'game.js' });
   return { game: window.footballGame, elements };
 }
@@ -239,7 +242,7 @@ test('a teammate can receive a kick in a long-shot highlight without an action s
   assert.notEqual(g.controlled, g.player);
 });
 
-test('a missed contact window and all five highlights resolve without freezing', () => {
+test('a missed contact window and the complete six-highlight session resolve without freezing', () => {
   const { game: g } = fixture();
   for (let index = 0; index < 5; index++) {
     start(g, index);
@@ -254,6 +257,12 @@ test('a missed contact window and all five highlights resolve without freezing',
     until(g, () => g.state === 'RESULT');
     assert.equal(g.stats.goals + g.stats.misses, index + 1);
   }
+  g.nextHighlight();
+  assert.equal(g.index, 5);
+  g.update(.9);
+  assert.equal(g.state, 'DEFENDING');
+  until(g, () => g.state === 'RESULT');
+  assert.equal(g.stats.misses + g.stats.goals + g.stats.tackles, 6);
   g.nextHighlight();
   assert.equal(g.state, 'SESSION_SUMMARY');
 });
@@ -461,7 +470,7 @@ test('a soft chip can punish an exposed keeper while the same kick is saved near
   for (const profile of ['line', 'advanced']) {
     const { game: g } = fixture();
     g.keeperPlan[0] = profile; start(g);
-    kick(g, { power: .16, cy: .87 }); until(g, () => g.pendingResult);
+    kick(g, { power: .16, cy: .94 }); until(g, () => g.pendingResult);
     assert.equal(g.resolution.kind, profile === 'advanced' ? 'goal' : 'save');
     if (profile === 'advanced') {
       assert.equal(g.flight.clearedKeeper, true);
@@ -478,4 +487,277 @@ test('an advanced keeper can still save a central ground shot', () => {
   assert.equal(g.resolution.kind, 'save');
   assert.equal(g.stats.goals, 0);
   assert.equal(g.keeper.y, 174);
+});
+
+function defensePointer(g, point, id = 17) {
+  return { button: 0, isPrimary: true, pointerId: id, clientX: g.view.x + point.x * g.view.scale, clientY: g.view.y + point.y * g.view.scale, preventDefault() {} };
+}
+function drawRoute(g, points) {
+  g.onPointerDown(defensePointer(g, g.player));
+  for (const point of points) g.onPointerMove(defensePointer(g, point));
+  g.onPointerUp(defensePointer(g, points[points.length - 1]));
+}
+function tapTackle(g) {
+  const event = defensePointer(g, g.ball);
+  g.onPointerDown(event); g.onPointerUp(event);
+}
+
+test('Win the Ball starts sixth with red possession and follows the actual drawn route', () => {
+  const { game: g, elements } = fixture(); start(g, 5);
+  assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('chapter-number').textContent, '6/6');
+  assert.equal(elements.get('chapter-progress').children.length, 6);
+  const red = g.defense.opponent;
+  assert.ok(Math.hypot(g.ball.x - red.x, g.ball.y - red.y) < 30);
+  assert.ok(Math.hypot(g.ball.x - g.player.x, g.ball.y - g.player.y) > 150);
+  drawRoute(g, [{ x: 500, y: 460 }, { x: 650, y: 410 }]);
+  assert.equal(g.defense.phase, 'running'); assert.equal(g.pointer, null);
+  g.update(.5);
+  assert.ok(g.player.x > 370 && g.player.x < 500, 'run to the first bend without teleporting');
+  assert.ok(g.player.y > 460); assert.ok(red.x > red.startX);
+  assert.ok(Math.hypot(g.ball.x - red.x, g.ball.y - red.y) < 30);
+  g.render();
+});
+
+test('a well-positioned green-window tackle wins possession once and contributes to the summary', () => {
+  const { game: g, elements } = fixture(); start(g, 5);
+  drawRoute(g, [{ x: 650, y: 410 }]);
+  until(g, () => g.defense.timing().ready);
+  const elapsed = g.defense.elapsed; tapTackle(g);
+  assert.equal(g.resolution.kind, 'ball_won'); assert.equal(elements.get('result-title').textContent, 'BALL WON!');
+  assert.equal(g.stats.tackles, 1); assert.equal(g.stats.goals, 0); assert.equal(g.stats.misses, 0);
+  assert.equal(g.outcomes[5], true);
+  tapTackle(g); g.finish('ball_won'); assert.equal(g.stats.tackles, 1);
+  const resolutionTime = until(g, () => g.state === 'RESULT');
+  assert.ok(elapsed + resolutionTime + .85 >= 4.8 && elapsed + resolutionTime + .85 <= 10);
+  assert.ok(Math.hypot(g.ball.x - g.player.x, g.ball.y - g.player.y) < 30);
+  assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) > 20);
+  assert.match(elements.get('next-button').innerHTML, /NEXT/);
+  g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
+  assert.equal(elements.get('total-tackles').textContent, 1);
+  assert.equal(elements.get('rating').textContent, 14);
+});
+
+test('an early or late tap in range is a missed tackle, never a free possession win', () => {
+  for (const late of [false, true]) {
+    const { game: g, elements } = fixture(); start(g, 5); drawRoute(g, [{ x: 650, y: 410 }]);
+    if (late) until(g, () => g.defense.timing().ready);
+    until(g, () => { const t = g.defense.timing(); return t.visible && t.inReach && t.positioned && !t.ready; });
+    tapTackle(g); assert.equal(g.resolution.kind, 'missed_tackle');
+    assert.equal(elements.get('result-title').textContent, 'MISSED TACKLE!');
+    assert.equal(g.stats.tackles, 0); assert.equal(g.stats.misses, 1);
+    until(g, () => g.state === 'RESULT');
+    assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) < 30);
+  }
+});
+
+test('correct clock timing cannot win the ball from behind the opponent', () => {
+  const { game: g } = fixture(); start(g, 5); drawRoute(g, [{ x: 592, y: 392 }]);
+  until(g, () => { const t = g.defense.timing(); return t.visible && t.inReach && !t.positioned && t.phase > .4 && t.phase < .75; });
+  tapTackle(g); assert.equal(g.resolution.kind, 'missed_tackle'); assert.equal(g.stats.tackles, 0);
+});
+
+test('wrong routes and no input allow the opponent to escape within ten seconds', () => {
+  for (const wrongRoute of [true, false]) {
+    const { game: g, elements } = fixture(); start(g, 5);
+    if (wrongRoute) { drawRoute(g, [{ x: 400, y: 600 }]); tapTackle(g); assert.equal(g.pendingResult, null); }
+    const elapsed = until(g, () => g.state === 'RESULT');
+    assert.ok(elapsed + .85 >= 5 && elapsed + .85 <= 10);
+    assert.equal(g.resolution.kind, 'opponent_escaped');
+    assert.equal(elements.get('result-title').textContent, 'OPPONENT ESCAPED!');
+    assert.equal(g.stats.tackles, 0); assert.equal(g.stats.misses, 1);
+  }
+});
+
+test('waiting too long before committing a route lets the moving opponent escape', () => {
+  const { game: g } = fixture(); start(g, 5); g.update(4);
+  drawRoute(g, [{ x: 650, y: 410 }]);
+  let green = false;
+  while (g.state !== 'RESULT') { g.update(1 / 120); green ||= g.defense.timing().ready; }
+  assert.equal(green, false);
+  assert.equal(g.resolution.kind, 'opponent_escaped');
+  assert.equal(g.stats.tackles, 0);
+});
+
+test('cancelling a defensive drag does not launch a run and allows a fresh route', () => {
+  const { game: g } = fixture(); start(g, 5);
+  const original = { x: g.player.x, y: g.player.y };
+  g.onPointerDown(defensePointer(g, g.player)); g.onPointerMove(defensePointer(g, { x: 600, y: 400 }));
+  g.cancelPointer(17); g.update(.2);
+  assert.equal(g.defense.phase, 'planning'); assert.equal(g.defense.preview.length, 0);
+  assert.equal(g.player.x, original.x); assert.equal(g.player.y, original.y);
+  drawRoute(g, [{ x: 650, y: 410 }]); assert.equal(g.defense.phase, 'running');
+});
+
+test('settings pause the defensive clock and restart clears possession, route, result, and statistics', () => {
+  const { game: g, elements } = fixture(); start(g, 5); drawRoute(g, [{ x: 650, y: 410 }]);
+  g.update(.3); const elapsed = g.defense.elapsed, ball = JSON.stringify(g.ball);
+  elements.get('conditions-dialog').open = true; g.update(20);
+  assert.equal(g.defense.elapsed, elapsed); assert.equal(JSON.stringify(g.ball), ball);
+  elements.get('conditions-dialog').open = false;
+  until(g, () => g.defense.timing().ready); tapTackle(g); assert.equal(g.stats.tackles, 1);
+  g.restart(); g.update(.9);
+  assert.equal(g.state, 'DEFENDING'); assert.equal(g.defense.phase, 'planning');
+  assert.equal(g.defense.elapsed, 0); assert.equal(g.defense.route.length, 0); assert.equal(g.defense.tackle, null);
+  assert.equal(g.resolution, null); assert.equal(g.pendingResult, null); assert.equal(g.stats.tackles, 0);
+  assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) < 30);
+});
+
+test('defensive timing and success remain playable at 30, 60, and 120 updates per second', () => {
+  for (const fps of [30, 60, 120]) {
+    const { game: g } = fixture(); start(g, 5); drawRoute(g, [{ x: 650, y: 410 }]);
+    for (let i = 0; i < fps * 7 && !g.defense.timing().ready; i++) g.update(1 / fps);
+    assert.equal(g.defense.timing().ready, true, `${fps} fps`);
+    tapTackle(g); assert.equal(g.resolution.kind, 'ball_won'); g.render();
+  }
+});
+
+test('restarting while drawing releases pointer capture before replacing the defensive highlight', () => {
+  const { game: g } = fixture(); start(g, 5);
+  let released = null;
+  g.canvas.hasPointerCapture = () => true;
+  g.canvas.releasePointerCapture = id => { released = id; };
+  g.onPointerDown(defensePointer(g, g.player)); g.onPointerMove(defensePointer(g, { x: 650, y: 410 }));
+  g.restart(); g.update(.9);
+  assert.equal(released, 17); assert.equal(g.pointer, null);
+  assert.equal(g.defense.preview.length, 0); assert.equal(g.defense.phase, 'planning');
+});
+
+test('all six highlights can be opened directly as independent practice attempts', () => {
+  const { game: g, elements } = fixture();
+  for (let index = 0; index < 6; index++) {
+    g.stats.goals = 3; g.outcomes[0] = true;
+    g.openHighlightPicker(); g.startPractice(index);
+    assert.equal(elements.get('highlight-dialog').open, false);
+    assert.equal(g.practiceIndex, index); assert.equal(g.index, index);
+    assert.equal(g.stats.goals, 0); assert.equal(g.outcomes.length, 0);
+    g.update(.9);
+    assert.equal(g.state, index === 5 ? 'DEFENDING' : index === 4 ? 'INTERCEPTION' : 'AIMING');
+    assert.equal(elements.get('chapter-number').textContent, `${index + 1}/6`);
+  }
+});
+
+test('practice result retries the selected defense highlight with clean statistics and no summary', () => {
+  const { game: g, elements } = fixture();
+  g.startPractice(5); g.update(.9); drawRoute(g, [{ x: 650, y: 410 }]);
+  until(g, () => g.defense.timing().ready); tapTackle(g);
+  assert.match(elements.get('next-button').innerHTML, /RETRY/);
+  until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
+  assert.equal(g.state, 'DEFENDING'); assert.equal(g.index, 5); assert.equal(g.practiceIndex, 5);
+  assert.equal(g.defense.phase, 'planning'); assert.equal(g.stats.tackles, 0);
+  assert.equal(g.resolution, null); assert.equal(g.outcomes[5], undefined);
+});
+
+test('closing the selection menu resumes the same encounter without changing its progress', () => {
+  const { game: g, elements } = fixture(); start(g, 5); g.update(.4);
+  const elapsed = g.defense.elapsed, ball = JSON.stringify(g.ball);
+  g.openHighlightPicker(); g.update(10);
+  assert.equal(g.defense.elapsed, elapsed); assert.equal(JSON.stringify(g.ball), ball);
+  elements.get('highlight-dialog').close(); g.update(.1);
+  assert.equal(g.state, 'DEFENDING'); assert.ok(g.defense.elapsed > elapsed);
+  assert.equal(g.practiceIndex, null);
+});
+
+test('play all exits practice and restores normal six-highlight progression', () => {
+  const { game: g } = fixture(); g.startPractice(5); g.update(.9);
+  g.stats.tackles = 1; g.beginSession(); g.update(.9);
+  assert.equal(g.practiceIndex, null); assert.equal(g.index, 0); assert.equal(g.defense, null);
+  assert.equal(g.stats.tackles, 0); assert.equal(g.state, 'AIMING');
+  kick(g, { x: 420 }); until(g, () => g.state === 'RESULT'); g.nextHighlight();
+  assert.equal(g.index, 1); assert.equal(g.state, 'HIGHLIGHT_INTRO');
+});
+
+test('invalid direct selections leave the current highlight untouched', () => {
+  const { game: g } = fixture(); start(g);
+  for (const value of [-1, 6, NaN, 1.5, '5', null]) g.startPractice(value);
+  assert.equal(g.index, 0); assert.equal(g.practiceIndex, null); assert.equal(g.state, 'AIMING');
+});
+
+test('top contact progressively loses pace while slight top contact remains useful', () => {
+  const { game: g } = fixture(), kick = { dx: 0, dy: -1, power: .8 };
+  const velocities = [0, -.25, -.6, -1].map(y => g.kickVelocity(kick, { x: 0, y }));
+  for (let i = 1; i < velocities.length; i++) assert.ok(-velocities[i].vy < -velocities[i - 1].vy);
+  assert.ok(-velocities[1].vy > -velocities[0].vy * .9);
+  assert.ok(-velocities[3].vy < -velocities[0].vy * .65);
+  assert.equal(velocities[3].vz, 0);
+});
+
+test('under contact trades forward pace for height and power controls chip range', () => {
+  const { game: g } = fixture();
+  const launch = (power, y) => g.kickVelocity({ dx: 0, dy: -1, power }, { x: 0, y });
+  assert.ok(-launch(.8, 1).vy < -launch(.8, 0).vy);
+  assert.ok(launch(.8, 1).vz > launch(.8, .5).vz);
+  const soft = launch(.16, .94), firm = launch(.8, .94);
+  assert.ok(firm.vz > soft.vz && -firm.vy > -soft.vy);
+});
+
+test('landings rebound with diminishing height and horizontal energy, then settle', () => {
+  const { game: g } = fixture();
+  const b = { x: 500, y: 500, z: 120, vx: 100, vy: 0, vz: 0, spin: .7, rotation: 0, age: 0 };
+  const heights = []; let peak = b.z, hits = 0;
+  for (let t = 0; t < 5; t += 1 / 120) {
+    const before = Math.hypot(b.vx, b.vy), hit = g.integrateBall(b, 1 / 120);
+    if (hit) { heights.push(peak); peak = 0; hits++; assert.ok(Math.hypot(b.vx, b.vy) < before * .9); }
+    peak = Math.max(peak, b.z);
+    assert.ok(b.z >= 0);
+  }
+  assert.ok(hits >= 2);
+  assert.ok(heights[1] < heights[0] * .3);
+  assert.equal(b.z, 0); assert.equal(b.vz, 0);
+  assert.equal(g.ripples.length, 0, 'preview integration must not emit effects or sound');
+});
+
+test('flight and repeated bounces agree at 30, 60 and 120 FPS', () => {
+  const { game: g } = fixture();
+  const results = [30, 60, 120].map(fps => {
+    const b = { x: 0, y: 0, z: 0, vx: 400, vy: -200, vz: 220, spin: .6, rotation: 0, age: 0 };
+    for (let i = 0; i < fps * 3; i++) g.integrateBall(b, 1 / fps);
+    return b;
+  });
+  for (const b of results) {
+    assert.ok(Math.hypot(b.x - results[0].x, b.y - results[0].y) < 1);
+    assert.ok(Math.abs(b.z - results[0].z) < .2);
+  }
+});
+
+test('curve does not add energy and decays much faster while rolling', () => {
+  const { game: g } = fixture();
+  const base = { x: 0, y: 0, vx: 400, vy: 0, vz: 0, spin: .8, rotation: 0, age: 0 };
+  const air = { ...base, z: 200 }, ground = { ...base, z: 0 };
+  g.integrateBall(air, .3); g.integrateBall(ground, .3);
+  assert.ok(Math.hypot(air.vx, air.vy) < 400);
+  assert.ok(Math.abs(ground.spin) < Math.abs(air.spin) * .5);
+  assert.ok(Math.abs(ground.vy) < Math.abs(air.vy) * .2);
+});
+
+test('keeper needs a new observation to react to a changed ball direction', () => {
+  const { game: g } = fixture(); start(g);
+  Object.assign(g.keeper, { reaction: 0, readTime: 0 });
+  Object.assign(g.ball, { x: 450, y: 300, vx: -100, vy: -200 });
+  g.updateKeeper(.01); const target = g.keeper.targetX;
+  g.ball.x = 550; g.ball.vx = 100;
+  g.updateKeeper(.05); assert.equal(g.keeper.targetX, target);
+  g.updateKeeper(.12); assert.ok(g.keeper.targetX > 500);
+});
+
+test('keeper commits to the dive direction even when curve crosses behind him', () => {
+  const { game: g } = fixture(); start(g);
+  Object.assign(g.keeper, { reaction: 0, readTime: 0 });
+  Object.assign(g.ball, { x: 450, y: 200, vx: -80, vy: -300 });
+  g.updateKeeper(.01); const target = g.keeper.targetX, x = g.keeper.x;
+  assert.equal(g.keeper.diveDirection, -1);
+  Object.assign(g.ball, { x: 560, vx: 100 });
+  g.updateKeeper(.1);
+  assert.equal(g.keeper.targetX, target); assert.ok(g.keeper.x < x);
+  assert.equal(g.keeper.diveDirection, -1);
+});
+
+test('a ball bouncing before the goal stays live and can score with immediate impact feedback', () => {
+  const { game: g } = fixture(); start(g);
+  kick(g, { x: 590, power: .6, cy: 0 });
+  until(g, () => g.ripples.some(r => r.bounce));
+  assert.equal(g.pendingResult, null);
+  const ripple = g.ripples.find(r => r.bounce);
+  assert.ok(ripple.strength > 0 && g.ball.vz > 0);
+  until(g, () => g.pendingResult);
+  assert.equal(g.resolution.kind, 'goal'); assert.equal(g.stats.goals, 1);
 });

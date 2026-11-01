@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const State = Object.freeze({ TITLE: 'TITLE', HIGHLIGHT_INTRO: 'HIGHLIGHT_INTRO', AIMING: 'AIMING', BALL_CONTACT: 'BALL_CONTACT', BALL_IN_MOTION: 'BALL_IN_MOTION', INTERCEPTION: 'INTERCEPTION', RESULT: 'RESULT', SESSION_SUMMARY: 'SESSION_SUMMARY' });
+  const State = Object.freeze({ TITLE: 'TITLE', HIGHLIGHT_INTRO: 'HIGHLIGHT_INTRO', AIMING: 'AIMING', BALL_CONTACT: 'BALL_CONTACT', BALL_IN_MOTION: 'BALL_IN_MOTION', INTERCEPTION: 'INTERCEPTION', DEFENDING: 'DEFENDING', RESULT: 'RESULT', SESSION_SUMMARY: 'SESSION_SUMMARY' });
   const W = 1000, H = 740;
   const HEIGHT_PROJECTION = .52;
   const BACKDROP_SHIFT = -55;
@@ -26,7 +26,8 @@
     { title: 'From distance.', tag: 'A LITTLE AMBITION', description: 'Outside the box. A sliver of space. Give the keeper something to think about.', intro: 'Space opens up outside the area. Have a go!', player: [540, 520], mates: [[735, 345]], defenders: [[408, 320], [657, 268]], tip: 'You’ll need power from here. Tap below the ball’s center for a little lift.' },
     { title: 'The through ball.', tag: 'SEE IT BEFORE THEY DO', description: 'Your teammate is on the move. Find the space, then find the finish.', intro: 'A runner breaks free on the left. Lead the pass!', player: [600, 476], mates: [[340, 390]], defenders: [[516, 308], [730, 278]], tip: 'Pass toward the mint run marker. Your teammate will chase the ball, then you can shoot.' },
     { title: 'Two against two.', tag: 'BETTER TOGETHER', description: 'Two shirts ahead of you. A teammate to your right. Find your way through.', intro: 'Two against two. Combine, or back yourself.', player: [379, 425], mates: [[680, 350]], defenders: [[464, 300], [590, 263]], tip: 'A ground pass across to your teammate can open a better angle. Or take the shot.' },
-    { title: 'Read the game.', tag: 'RIGHT PLACE. RIGHT TIME.', description: 'The ball is on its way. Read the pass, get there, and make it yours.', intro: 'An incoming pass! Tap the marked space to meet it.', player: [485, 428], mates: [[200, 320]], defenders: [[737, 292]], tip: 'Tap ahead of the moving ball, near the mint ring. You move automatically.' }
+    { title: 'Read the game.', tag: 'RIGHT PLACE. RIGHT TIME.', description: 'The ball is on its way. Read the pass, get there, and make it yours.', intro: 'An incoming pass! Tap the marked space to meet it.', player: [485, 428], mates: [[200, 320]], defenders: [[737, 292]], tip: 'Tap ahead of the moving ball, near the mint ring. You move automatically.' },
+    { title: 'Win the Ball', kind: 'defense', player: [370, 520], mates: [], defenders: [[535, 350]] }
   ];
 
   class AudioSystem {
@@ -44,10 +45,10 @@
     play(kind) {
       if (!this.enabled || !this.context) return;
       const ctx = this.context, now = ctx.currentTime;
-      const notes = kind === 'goal' ? [440, 554, 659, 880] : kind === 'kick' ? [140, 75] : kind === 'save' ? [220, 110] : [520];
+      const notes = kind === 'goal' ? [440, 554, 659, 880] : kind === 'kick' ? [140, 75] : kind === 'save' ? [220, 110] : kind === 'bounce' ? [105] : [520];
       notes.forEach((frequency, i) => {
         const osc = ctx.createOscillator(), gain = ctx.createGain(), at = now + i * .09;
-        osc.type = kind === 'kick' ? 'triangle' : 'sine'; osc.frequency.setValueAtTime(frequency, at);
+        osc.type = ['kick', 'bounce'].includes(kind) ? 'triangle' : 'sine'; osc.frequency.setValueAtTime(frequency, at);
         gain.gain.setValueAtTime(.0001, at); gain.gain.exponentialRampToValueAtTime(kind === 'kick' ? .14 : .065, at + .012); gain.gain.exponentialRampToValueAtTime(.0001, at + .18);
         osc.connect(gain); gain.connect(ctx.destination); osc.start(at); osc.stop(at + .2);
       });
@@ -58,8 +59,8 @@
     constructor() {
       this.canvas = $('game'); this.ctx = this.canvas.getContext('2d'); this.audio = new AudioSystem();
       this.environment = new window.FootballEnvironment();
-      this.state = State.TITLE; this.stateTime = 0; this.time = 0; this.index = 0;
-      this.stats = { goals: 0, passes: 0, misses: 0, receives: 0 }; this.outcomes = [];
+      this.state = State.TITLE; this.stateTime = 0; this.time = 0; this.index = 0; this.practiceIndex = null;
+      this.stats = { goals: 0, passes: 0, misses: 0, receives: 0, tackles: 0 }; this.outcomes = [];
       this.keeperPlan = Array(SCENARIOS.length).fill('line');
       this.pointer = null; this.aim = null; this.kick = null; this.contact = null;
       this.particles = []; this.trail = []; this.ripples = []; this.toastTime = 0; this.shake = 0; this.flash = 0;
@@ -81,6 +82,12 @@
       this.listen($('play-button'), 'click', () => this.startSession());
       this.listen($('again-button'), 'click', () => this.startSession());
       this.listen($('next-button'), 'click', () => this.nextHighlight());
+      for (const id of ['highlight-button', 'select-highlight-button', 'result-select-button', 'summary-select-button']) this.listen($(id), 'click', () => this.openHighlightPicker());
+      $('highlight-list').innerHTML = SCENARIOS.map((scenario, index) => `<button class="highlight-option${scenario.kind === 'defense' ? ' defensive-option' : ''}" type="button" data-highlight="${index}"><span aria-hidden="true">${String(index + 1).padStart(2, '0')}</span><strong>${scenario.title.replace('.', '')}</strong></button>`).join('');
+      this.listen($('highlight-list'), 'click', e => { const button = e.target.closest('button[data-highlight]'); if (button) this.startPractice(Number(button.dataset.highlight)); });
+      this.listen($('highlight-close'), 'click', () => $('highlight-dialog').close());
+      this.listen($('highlight-dialog'), 'close', () => { this.lastTime = null; });
+      this.listen($('play-all-button'), 'click', () => this.beginSession());
       this.listen($('restart-button'), 'click', () => { if (![State.TITLE, State.SESSION_SUMMARY].includes(this.state)) this.restart(); });
       this.listen($('sound-button'), 'click', () => this.audio.toggle());
       this.listen($('conditions-button'), 'click', () => {
@@ -110,7 +117,7 @@
       const bounds = this.cameraBounds();
       const hudTop = rect.height < 500 ? 48 : 68, dragBottom = rect.height < 500 ? 48 : 72;
       const usableHeight = Math.max(80, rect.height - hudTop - dragBottom);
-      const scale = Math.min(rect.width / bounds.width, usableHeight / bounds.height);
+      const scale = Math.min(this.defense ? 1.5 : Infinity, rect.width / bounds.width, usableHeight / bounds.height);
       const next = { width: rect.width, height: rect.height, scale, x: (rect.width - bounds.width * scale) / 2 - bounds.left * scale, y: hudTop + (usableHeight - bounds.height * scale) / 2 - bounds.top * scale };
       // Repeated visualViewport events need not cancel a gesture if mapping is unchanged.
       const changed = Math.abs(next.scale - this.view.scale) > .0001 || Math.abs(next.x - this.view.x) > .25 || Math.abs(next.y - this.view.y) > .25;
@@ -122,6 +129,7 @@
       document.body.classList.toggle('contact-tight', this.compact && rect.height < 300);
     }
     cameraBounds() {
+      if (this.defense) return { left: 270, top: 240, width: 600, height: 360 };
       // Frame the opportunity on every screen, leaving the arena to fill the display.
       // Bounds are stable during play; they update at possession/state changes only.
       const actors = [this.player, ...this.mates, ...this.defenders];
@@ -182,7 +190,7 @@
       this.player = this.makePlayer(...s.player, 'blue', 9); this.controlled = this.player;
       this.mates = s.mates.map((p, i) => this.makePlayer(...p, 'blue', 7 + i * 4));
       this.defenders = s.defenders.map((p, i) => this.makePlayer(...p, 'red', 4 + i));
-      const profile = this.keeperPlan[index], homeY = FIELD.top + (profile === 'advanced' ? 90 : GOAL.keeperOffset);
+      const profile = this.keeperPlan[index] || 'line', homeY = FIELD.top + (profile === 'advanced' ? 90 : GOAL.keeperOffset);
       this.keeper = { ...this.makePlayer(500, homeY, 'keeper', 1), profile, homeY, reaction: GOAL.keeperReaction, dive: 0, diveCooldown: 0, targetX: 500 };
       this.ball = { ...this.possessionPosition(this.player), z: 0, vx: 0, vy: 0, vz: 0, spin: 0, rotation: 0, age: 0 };
       this.trail = []; this.particles = []; this.ripples = []; this.pointer = null; this.aim = null; this.contact = null; this.kick = null;
@@ -190,6 +198,7 @@
       this.resolution = null; this.flight = null; this.banner = null; this.netWobble = 0;
       this.interceptTarget = null; this.interceptSuggested = { x: 500, y: 320 }; this.motionTime = 0; this.shake = 0;
       this.scenarioSnapshot = { ...this.stats };
+      this.defense = s.kind === 'defense' ? new window.DefensiveHighlight(this) : null;
     }
     transition(next) {
       this.cancelPointer(this.pointer?.id); this.state = next; this.stateTime = 0;
@@ -205,13 +214,25 @@
         $('contact-heading').querySelector('p').textContent = 'Tap a point on the ball';
       }
       // Contact and flight retain the aim camera; a new possession reframes the play.
-      if ([State.HIGHLIGHT_INTRO, State.AIMING, State.INTERCEPTION].includes(next)) this.resize();
+      if ([State.HIGHLIGHT_INTRO, State.AIMING, State.INTERCEPTION, State.DEFENDING].includes(next)) this.resize();
       this.updateUI();
     }
     startSession() {
       if (![State.TITLE, State.SESSION_SUMMARY].includes(this.state)) return;
+      this.beginSession();
+    }
+    openHighlightPicker() {
+      this.cancelPointer(this.pointer?.id); $('highlight-dialog').showModal();
+    }
+    startPractice(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= SCENARIOS.length) return;
+      this.beginSession(index);
+    }
+    beginSession(practiceIndex = null) {
+      this.cancelPointer(this.pointer?.id); $('highlight-dialog').close();
+      this.practiceIndex = practiceIndex;
       this.keeperPlan = this.createKeeperPlan();
-      this.stats = { goals: 0, passes: 0, misses: 0, receives: 0 }; this.outcomes = []; this.index = 0; this.beginHighlight(); this.audio.play('tap');
+      this.stats = { goals: 0, passes: 0, misses: 0, receives: 0, tackles: 0 }; this.outcomes = []; this.index = practiceIndex ?? 0; this.beginHighlight(); this.audio.play('tap');
     }
     createKeeperPlan(random = Math.random) {
       const plan = ['advanced', 'advanced', 'line', 'line', 'line'];
@@ -219,6 +240,7 @@
       return plan;
     }
     beginHighlight() {
+      this.cancelPointer(this.pointer?.id);
       this.loadActors(this.index); this.transition(State.HIGHLIGHT_INTRO);
       this.toast(SCENARIOS[this.index].title.replace('.', '') + (this.keeper.profile === 'advanced' ? ' · Keeper off the line' : ''), 1.8);
     }
@@ -227,7 +249,8 @@
     }
     nextHighlight() {
       if (this.state !== State.RESULT) return;
-      if (this.index === 4) { this.showSummary(); return; }
+      if (this.practiceIndex !== null) { this.restart(); return; }
+      if (this.index === SCENARIOS.length - 1) { this.showSummary(); return; }
       this.index++; this.beginHighlight();
     }
     updateConditionsUI() {
@@ -241,6 +264,8 @@
       $('score').textContent = this.stats.goals;
       $('chapter-number').textContent = `${this.index + 1}/${SCENARIOS.length}`;
       $('restart-button').disabled = [State.TITLE, State.SESSION_SUMMARY].includes(this.state);
+      $('help-button').classList.toggle('hidden', Boolean(this.defense?.finished));
+      this.canvas.setAttribute('aria-label', this.defense ? 'Win the Ball. Draw a running path from your blue player, release to run, then tap when the nearby tackle ring turns green.' : 'Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike.');
       $('bottom-hint').textContent = this.state === State.INTERCEPTION ? 'Tap the ring to receive.' : this.state === State.AIMING ? 'Drag back to aim. Release, then tap the ball.' : this.state === State.BALL_CONTACT ? 'Tap a point on the ball.' : '';
       [...$('chapter-progress').children].forEach((el, i) => { el.className = i === this.index ? 'current' : this.outcomes[i] === true ? 'done' : this.outcomes[i] === false ? 'failed' : ''; });
       this.updateFlightUI();
@@ -251,6 +276,12 @@
       if (e.button !== 0 || this.pointer || e.isPrimary === false) return;
       const p = this.toWorld(e);
       if (this.state === State.TITLE) { this.startSession(); return; }
+      if (this.state === State.DEFENDING && !this.defense.finished) {
+        e.preventDefault();
+        if (this.defense.phase === 'running') { this.defense.attemptTackle(); return; }
+        if (distance(p, this.player) > Math.max(55, 44 / this.view.scale)) { this.toast('Draw from your blue player', 1.2); return; }
+        this.pointer = { id: e.pointerId, start: p, last: p }; this.canvas.setPointerCapture(e.pointerId); this.defense.beginRoute(); this.toastTime = 0; return;
+      }
       if (this.state === State.INTERCEPTION) {
         e.preventDefault(); this.interceptTarget = { x: clamp(p.x, FIELD.left + 12, FIELD.right - 12), y: clamp(p.y, FIELD.top + 25, FIELD.bottom - 20) };
         this.ripples.push({ ...this.interceptTarget, age: 0 }); this.audio.play('tap'); return;
@@ -265,6 +296,7 @@
     onPointerMove(e) {
       if (!this.pointer || e.pointerId !== this.pointer.id) return;
       e.preventDefault(); this.pointer.last = this.toWorld(e);
+      if (this.state === State.DEFENDING) { this.defense.extendRoute(this.pointer.last); return; }
       if (this.state === State.AIMING) {
         const dx = this.pointer.start.x - this.pointer.last.x, dy = this.pointer.start.y - this.pointer.last.y, d = length(dx, dy);
         this.aim = { dx: d > 0 ? dx / d : 0, dy: d > 0 ? dy / d : -1, power: clamp(d / this.maxDrag(), 0, 1), distance: d }; this.updatePower(this.aim.power);
@@ -273,6 +305,11 @@
     onPointerUp(e) {
       if (!this.pointer || e.pointerId !== this.pointer.id) return;
       e.preventDefault(); const p = this.toWorld(e), aim = this.aim;
+      if (this.state === State.DEFENDING) {
+        this.defense.extendRoute(p); this.releasePointer();
+        if (!this.defense.commitRoute()) this.toast('Draw a longer running path', 1.2);
+        return;
+      }
       if (this.state === State.AIMING) {
         this.onPointerMove(e);
         const finalAim = this.aim;
@@ -288,7 +325,7 @@
       } else { this.releasePointer(); this.aim = aim; }
     }
     releasePointer() { const p = this.pointer; this.pointer = null; if (p && this.canvas.hasPointerCapture(p.id)) this.canvas.releasePointerCapture(p.id); }
-    cancelPointer(id) { if (this.pointer && id === this.pointer.id) { this.releasePointer(); if (this.state === State.AIMING) { this.aim = null; this.updatePower(0); } } }
+    cancelPointer(id) { if (this.pointer && id === this.pointer.id) { this.releasePointer(); if (this.state === State.DEFENDING) this.defense.cancelRoute(); if (this.state === State.AIMING) { this.aim = null; this.updatePower(0); } } }
     chooseContact(x, y, timedOut) {
       if (this.state !== State.BALL_CONTACT || this.contact) return;
       this.contact = { x: clamp(x, -1, 1), y: clamp(y, -1, 1), timedOut, age: 0 }; this.audio.play('tap');
@@ -298,7 +335,10 @@
     kickVelocity(kick, contact) {
       const r = length(contact.x, contact.y), edge = Math.max(0, r - .78), accuracy = contact.timedOut ? .15 : edge * .18;
       const angle = Math.atan2(kick.dy, kick.dx) + (contact.timedOut ? .12 : contact.x * accuracy);
-      const speed = (220 + kick.power * 530) * (1 - edge * .2) * (contact.timedOut ? .68 : 1);
+      // Off-centre contact trades forward pace for lift or a weaker topped strike.
+      const top = Math.max(0, -contact.y), under = Math.max(0, contact.y);
+      const transfer = 1 - .38 * Math.pow(top, 1.3) - .16 * under * under;
+      const speed = (220 + kick.power * 530) * transfer * (1 - edge * .2) * (contact.timedOut ? .68 : 1);
       const loftPower = .65 + .7 * kick.power;
       const loft = Math.max(0, 62 + contact.y * 245);
       return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, vz: loft * loftPower, spin: -contact.x * .82 };
@@ -308,7 +348,7 @@
       Object.assign(this.ball, this.kickVelocity(this.kick, this.contact), { age: 0, z: 0 });
       Object.assign(this.ball, this.possessionPosition(this.controlled));
       // A short reaction delay keeps corner shots viable from the foot-level origin.
-      this.motionTime = 0; this.trail = []; this.keeper.reaction = GOAL.keeperReaction; this.keeper.dive = 0; this.keeper.diveCooldown = 0;
+      this.motionTime = 0; this.trail = []; this.keeper.reaction = GOAL.keeperReaction; this.keeper.dive = 0; this.keeper.diveCooldown = 0; this.keeper.readTime = 0;
       this.kicker = this.controlled; this.audio.play('kick');
       this.flight = { maxHeight: 0, clearedKeeper: false };
       this.shake = this.kick.power > .78 && !this.reducedMotion ? 5 : 0;
@@ -329,10 +369,14 @@
     }
     finish(kind, detail) {
       if (this.pendingResult || [State.RESULT, State.SESSION_SUMMARY].includes(this.state)) return;
-      const success = kind === 'goal'; this.outcomes[this.index] = success;
+      const success = kind === 'goal' || kind === 'ball_won'; this.outcomes[this.index] = success;
       this.resolution = { kind, elapsed: 0, netHit: false, landing: null, crossing: { x: this.ball.x, y: this.ball.y, z: this.ball.z } };
       const chip = success && this.flight?.clearedKeeper;
-      if (success) {
+      if (kind === 'ball_won') {
+        this.stats.tackles++; this.audio.play('tap');
+        this.ripples.push({ x: this.ball.x, y: this.ball.y, age: 0 });
+        this.banner = { text: 'BALL WON!', sub: 'CLEAN TACKLE', color: '#d0f69a', time: 1.4, max: 1.4 };
+      } else if (success) {
         this.stats.goals++; this.audio.play('goal'); this.celebrate(); this.flash = .2;
         this.banner = { text: 'GOAL!', sub: chip ? 'CHIPPED OVER THE KEEPER' : 'BELOW THE BAR. IN THE NET.', color: '#d0f69a', time: 2.4, max: 2.4 };
       } else {
@@ -346,20 +390,23 @@
           weak: { text: 'TOO WEAK!', sub: 'MORE POWER NEEDED', color: '#cfd8dc' },
           lost: { text: 'CHANCE GONE!', sub: 'TOO LATE', color: '#cfd8dc' }
         };
+        bMap.missed_tackle = { text: 'MISSED TACKLE!', sub: 'POSITION · TIMING', color: '#ffb074' };
+        bMap.opponent_escaped = { text: 'OPPONENT ESCAPED!', sub: 'CUT OFF THE RUN', color: '#ff8b79' };
         bMap.bar = { text: 'CROSSBAR!', sub: 'OFF THE FRAME, BACK OUT', color: '#ffb74d' };
         bMap.post = { text: 'OFF THE POST!', sub: 'THE BALL STAYS OUT', color: '#ffb74d' };
         const b = bMap[kind] || { text: 'CHANCE MISSED!', sub: 'KEEP YOUR HEAD UP', color: '#f48fb1' };
         this.banner = { ...b, time: 2.0, max: 2.0 };
       }
       const titles = { goal: chip ? 'Over the keeper!' : 'GOAL!', save: 'Saved!', blocked: 'Blocked!', intercepted: 'Intercepted!', wide: 'Wide!', high: 'Over the crossbar.', bar: 'Crossbar!', post: 'Off the post!', weak: 'Too weak!', lost: 'Chance missed!' };
+      Object.assign(titles, { ball_won: 'BALL WON!', missed_tackle: 'MISSED TACKLE!', opponent_escaped: 'OPPONENT ESCAPED!' });
       $('result-title').textContent = titles[kind] || 'The chance slips away.';
       $('result-symbol').textContent = success ? '↗' : kind === 'save' ? '⊘' : '↘';
       $('result-symbol').style.color = success ? 'var(--mint)' : '#f4ae8f';
       $('result-kicker').textContent = `${this.index + 1}/${SCENARIOS.length}`;
-      $('result-detail').textContent = success ? (chip ? 'Your chip cleared the goalkeeper and crossed below the bar.' : 'The ball crossed the goal line between the posts and below the bar.') : detail;
-      $('next-button').innerHTML = this.index === 4 ? 'RESULTS <span>→</span>' : 'NEXT <span>→</span>';
+      $('result-detail').textContent = kind === 'ball_won' ? detail : success ? (chip ? 'Your chip cleared the goalkeeper and crossed below the bar.' : 'The ball crossed the goal line between the posts and below the bar.') : detail;
+      $('next-button').innerHTML = this.practiceIndex !== null ? 'RETRY <span>↻</span>' : 'NEXT <span>→</span>';
       // Leave the action visible before bringing up the result card.
-      this.pendingResult = { kind, wait: success ? 2.1 : ['high', 'wide'].includes(kind) ? 2.4 : 1.35 };
+      this.pendingResult = { kind, wait: this.defense ? 1.3 : success ? 2.1 : ['high', 'wide'].includes(kind) ? 2.4 : 1.35 };
       this.aim = null; this.updateUI(); this.updateFlightUI();
     }
     celebrate() {
@@ -374,8 +421,9 @@
       this.player.celebration = 3.2; this.mates.forEach(p => p.celebration = 3.2);
     }
     showSummary() {
-      const score = clamp(Math.round(this.stats.goals * 16 + Math.min(this.stats.passes, 3) * 4 + this.stats.receives * 8), 0, 100);
+      const score = clamp(Math.round((this.stats.goals + this.stats.tackles) * 14 + Math.min(this.stats.passes, 3) * 3 + this.stats.receives * 7), 0, 100);
       $('rating').textContent = score; $('total-goals').textContent = this.stats.goals; $('total-passes').textContent = this.stats.passes; $('total-misses').textContent = this.stats.misses;
+      $('total-tackles').textContent = this.stats.tackles;
       $('summary-title').textContent = 'FULL TIME';
       $('summary-detail').textContent = score >= 75 ? 'Vision, touch, and a little nerve. A performance to remember.' : 'Every chance teaches you something. Go again and find your touch.';
       this.toastTime = 0; this.transition(State.SESSION_SUMMARY);
@@ -386,7 +434,7 @@
     }
     update(dt) {
       // Dialogs trap focus and pause simulation, including the contact countdown.
-      if ($('conditions-dialog').open || $('help-dialog').open) return;
+      if ($('conditions-dialog').open || $('help-dialog').open || $('highlight-dialog').open) return;
       this.time += dt; this.stateTime += dt;
       if (this.toastTime > 0) { this.toastTime -= dt; if (this.toastTime <= 0) $('toast').classList.add('hidden'); }
       else $('toast').classList.add('hidden');
@@ -407,7 +455,10 @@
         if (this.pendingResult.wait <= 0) { this.pendingResult = null; this.transition(State.RESULT); } return;
       }
       if (this.state === State.HIGHLIGHT_INTRO && this.stateTime > .85) {
-        if (this.index === 4) this.startInterception(); else { this.transition(State.AIMING); this.updatePower(0); }
+        if (this.defense) { this.transition(State.DEFENDING); this.toast('Draw from blue · lead the opponent', 2.4); }
+        else if (this.index === 4) this.startInterception(); else { this.transition(State.AIMING); this.updatePower(0); }
+      } else if (this.state === State.DEFENDING) {
+        this.defense.update(dt);
       } else if (this.state === State.BALL_CONTACT) {
         $('contact-timer-fill').style.width = `${Math.max(0, 1 - this.stateTime / CONTACT_TIME) * 100}%`;
         if (this.contact) { this.contact.age += dt; if (this.contact.age > .23) this.executeKick(); }
@@ -430,6 +481,7 @@
       $('flight-meter').classList.toggle('hidden', !active);
       if (this.resolution && !followingMiss) {
         const messages = { goal: this.flight?.clearedKeeper ? 'GOAL · OVER THE KEEPER, INTO THE NET' : 'GOAL · BELOW THE BAR, INTO THE NET', save: 'SAVED · THE KEEPER HAS IT', high: 'OVER THE BAR · GOAL KICK', wide: 'WIDE · GOAL KICK', bar: 'CROSSBAR · THE BALL COMES BACK OUT', post: 'OFF THE POST · NO GOAL', blocked: 'BLOCKED BY THE DEFENDER', intercepted: 'PASS INTERCEPTED', weak: 'THE BALL RUNS OUT OF PACE', lost: 'CHANCE MISSED' };
+        Object.assign(messages, { ball_won: 'BALL WON!', missed_tackle: 'MISSED TACKLE!', opponent_escaped: 'OPPONENT ESCAPED!' });
         $('bottom-hint').textContent = messages[this.resolution.kind]; return;
       }
       if (!active) return;
@@ -440,6 +492,7 @@
       $('bottom-hint').textContent = followingMiss ? `${this.resolution.kind === 'high' ? 'OVER THE BAR' : 'WIDE'} · ${this.resolution.landing ? 'LANDED OUTSIDE' : phase}` : `${(this.flight?.maxHeight || 0) > 45 || b.vz > 140 ? 'LOFTED KICK' : 'KICK'} · ${phase}`;
     }
     updateResolution(dt) {
+      if (this.defense) { this.defense.updateResult(dt); return; }
       const b = this.ball, r = this.resolution;
       r.elapsed += dt;
       if (r.kind === 'save') {
@@ -453,8 +506,9 @@
       const motionDt = dt * (r.kind === 'goal' ? .7 : airborneMiss ? MISS_PLAYBACK : .45), steps = Math.max(1, Math.ceil(motionDt * 120));
       for (let i = 0; i < steps; i++) {
         const previousZ = b.z;
-        this.integrateBall(b, motionDt / steps);
-        if (airborneMiss && !r.landing && previousZ > 0 && b.z === 0) {
+        const impact = this.integrateBall(b, motionDt / steps, r.kind === 'goal' ? .20 : .46);
+        this.ballImpact(impact);
+        if (airborneMiss && !r.landing && previousZ > 0 && impact) {
           r.landing = { x: b.x, y: b.y };
           this.pendingResult.wait = .5;
         }
@@ -481,15 +535,42 @@
       this.trail.push({ x: b.x, y: b.y, z: b.z, age: 0 }); if (this.trail.length > 70) this.trail.shift();
       this.trail.forEach(p => p.age += dt);
     }
-    integrateBall(ball, dt) {
-      const speed = length(ball.vx, ball.vy), spin = ball.spin;
-      const ax = -ball.vy * spin * .80, ay = ball.vx * spin * .80;
-      ball.vx += ax * dt; ball.vy += ay * dt;
-      const friction = ball.z > 1 ? .10 : .49;
-      const decay = Math.exp(-friction * dt); ball.vx *= decay; ball.vy *= decay;
-      ball.x += ball.vx * dt; ball.y += ball.vy * dt;
-      if (ball.z > 0 || ball.vz > 0) { ball.vz -= BALL_GRAVITY * dt; ball.z += ball.vz * dt; if (ball.z < 0) { ball.z = 0; ball.vz = Math.abs(ball.vz) > 65 ? -ball.vz * .23 : 0; } }
-      ball.spin *= Math.exp(-dt * .23); ball.rotation += speed * dt * .045 + spin * dt * 4; ball.age += dt;
+    integrateBall(ball, dt, restitution = .46) {
+      // Rotate velocity rather than adding lateral energy on every frame.
+      // Smaller steps keep landings and curvature consistent at different frame rates.
+      let impact = null;
+      const steps = Math.max(1, Math.ceil(dt / (1 / 240))), h = dt / steps;
+      for (let i = 0; i < steps; i++) {
+        const airborne = ball.z > .001 || ball.vz > 0;
+        const turn = ball.spin * (airborne ? .80 : .12) * h;
+        const cos = Math.cos(turn), sin = Math.sin(turn), vx = ball.vx;
+        ball.vx = vx * cos - ball.vy * sin; ball.vy = vx * sin + ball.vy * cos;
+        const decay = Math.exp(-(airborne ? .10 : .49) * h);
+        const travel = (1 - decay) / (airborne ? .10 : .49);
+        ball.x += ball.vx * travel; ball.y += ball.vy * travel;
+        ball.vx *= decay; ball.vy *= decay;
+        if (airborne) {
+          const nextZ = ball.z + ball.vz * h - .5 * BALL_GRAVITY * h * h;
+          if (nextZ <= 0) {
+            const hitTime = clamp((ball.vz + Math.sqrt(ball.vz * ball.vz + 2 * BALL_GRAVITY * ball.z)) / BALL_GRAVITY, 0, h);
+            const hitSpeed = Math.max(0, BALL_GRAVITY * hitTime - ball.vz);
+            const rebound = hitSpeed > 38 ? hitSpeed * restitution : 0, rest = h - hitTime;
+            ball.z = rebound ? Math.max(0, rebound * rest - .5 * BALL_GRAVITY * rest * rest) : 0;
+            ball.vz = rebound ? rebound - BALL_GRAVITY * rest : 0;
+            ball.vx *= .88; ball.vy *= .88; ball.spin *= .65;
+            if (hitSpeed > 38) impact = { x: ball.x, y: ball.y, strength: clamp(hitSpeed / 250, .2, 1) };
+          } else { ball.z = nextZ; ball.vz -= BALL_GRAVITY * h; }
+        }
+        ball.spin *= Math.exp(-h * (airborne ? .23 : 2.8));
+        ball.rotation += length(ball.vx, ball.vy) * h * .045 + ball.spin * h * 4;
+      }
+      ball.age += dt;
+      return impact;
+    }
+    ballImpact(impact) {
+      if (!impact) return;
+      this.ripples.push({ ...impact, bounce: true, age: 0 });
+      if (impact.strength > .3) this.audio.play('bounce');
     }
     movePlayer(p, tx, ty, speed, dt) {
       const dx = tx - p.x, dy = ty - p.y, d = length(dx, dy), move = Math.min(d, speed * dt);
@@ -498,10 +579,14 @@
     updateKeeper(dt) {
       const k = this.keeper, b = this.ball; k.reaction -= dt; k.diveCooldown = Math.max(0, k.diveCooldown - dt);
       if (k.reaction > 0) return;
-      // Reaction follows the current ball with limited anticipation, never the planned aim.
-      k.targetX = clamp(b.x + (b.vy < 0 ? b.vx * .08 : 0), FIELD.goalLeft + 18, FIELD.goalRight - 18);
+      // Read the visible flight in intervals; late curve needs a new observation.
+      k.readTime = (k.readTime || 0) - dt;
+      if (k.dive <= 0 && k.readTime <= 0) {
+        k.targetX = clamp(b.x + (b.vy < 0 ? b.vx * .12 : 0), FIELD.goalLeft + 18, FIELD.goalRight - 18);
+        k.readTime = .16;
+      }
       const danger = b.y < 255 && b.vy < -50;
-      if (danger && !k.diveCooldown && Math.abs(b.x - k.x) > 22) { k.dive = .42; k.diveCooldown = 1.1; k.diveDirection = Math.sign(b.x - k.x); }
+      if (danger && !k.diveCooldown && Math.abs(b.x - k.x) > 22) { k.dive = .42; k.diveCooldown = 1.1; k.diveDirection = Math.sign(k.targetX - k.x) || Math.sign(b.x - k.x); k.targetX = clamp(k.x + k.diveDirection * 78, FIELD.goalLeft + 18, FIELD.goalRight - 18); }
       k.dive = Math.max(0, k.dive - dt);
       const retreat = k.profile === 'advanced' && b.vy < -50 && b.y < k.y + 65 && b.z > 25;
       const targetY = retreat ? FIELD.top + GOAL.keeperOffset : k.homeY;
@@ -547,7 +632,7 @@
     }
     updateMotion(dt) {
       const previousKeeperPlane = this.keeper.y - 7;
-      this.updateAI(dt); const b = this.ball, previous = { x: b.x, y: b.y, z: b.z }; this.integrateBall(b, dt);
+      this.updateAI(dt); const b = this.ball, previous = { x: b.x, y: b.y, z: b.z }; this.ballImpact(this.integrateBall(b, dt));
       if (this.flight) {
         this.flight.maxHeight = Math.max(this.flight.maxHeight, b.z);
         const plane = this.keeper.y - 7;
@@ -604,6 +689,7 @@
       c.save(); c.translate(v.x, v.y); c.scale(v.scale, v.scale);
       if (this.shake > 0) c.translate(Math.sin(this.time * 86) * this.shake, Math.cos(this.time * 73) * this.shake * .55);
       this.drawPitch(c); this.drawGoalBack(c); this.drawRunMarkers(c);
+      if (this.state === State.DEFENDING) this.defense.drawWorld(c);
       if (this.state === State.AIMING && this.aim?.power > .03) this.drawAim(c);
       this.drawTrail(c); this.drawBallShadow(c, this.ball);
       const actors = [this.player, ...this.mates, ...this.defenders, this.keeper].sort((a, b) => a.y - b.y);
@@ -617,7 +703,17 @@
       this.drawGoalFront(c);
       if (aboveGoal) this.drawBall(c, this.ball);
       this.drawCrossingMarker(c);
-      for (const r of this.ripples) { c.strokeStyle = `rgba(198,255,0,${1 - r.age})`; c.lineWidth = 2; c.beginPath(); c.arc(r.x, r.y, 16 + r.age * 25, 0, Math.PI * 2); c.stroke(); }
+      for (const r of this.ripples) {
+        if (r.bounce) {
+          c.strokeStyle = `rgba(255,245,210,${Math.max(0, 1 - r.age / .38) * .75})`;
+          c.lineWidth = 1.5; c.beginPath();
+          c.ellipse(r.x, r.y + 3, 7 + r.age * 30, 3 + r.age * 12, 0, 0, Math.PI * 2);
+        } else {
+          c.strokeStyle = `rgba(198,255,0,${1 - r.age})`; c.lineWidth = 2; c.beginPath();
+          c.arc(r.x, r.y, 16 + r.age * 25, 0, Math.PI * 2);
+        }
+        c.stroke();
+      }
       for (const p of this.particles) {
         c.save(); c.globalAlpha = Math.min(1, p.life); c.fillStyle = p.color;
         c.translate(p.x, p.y); c.rotate(p.rot || p.life * 4);
@@ -629,6 +725,7 @@
       if (this.state === State.BALL_CONTACT) this.drawContact(c);
       if (this.flash > 0 && !this.reducedMotion) { c.fillStyle = `rgba(255,255,255,${this.flash * .4})`; c.fillRect(0, 0, W, H); }
       c.restore();
+      if (this.state === State.DEFENDING) this.defense.drawTiming(c);
       this.drawArcadeBanner(c);
     }
     ballAboveGoal() {
@@ -787,16 +884,20 @@
     }
     drawPlayer(c, p) {
       const isControlled = p === this.controlled && ![State.TITLE, State.BALL_CONTACT].includes(this.state);
-      const moving = [State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.state);
+      const defenseMoving = this.defense && (p === this.player ? this.defense.phase === 'running' && this.defense.routeIndex < this.defense.route.length : p === this.defense.opponent && (!this.defense.finished || !this.defense.tackle?.success));
+      const moving = [State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.state) || this.state === State.DEFENDING && defenseMoving;
       const isShooting = this.kicker === p && this.motionTime < 0.28;
       const celebration = p.celebration > 0;
       const hop = celebration ? -Math.abs(Math.sin(p.celebration * 10)) * 9 : 0;
       const stride = moving ? Math.sin(p.step * 1.4) * 4.5 : 0;
+      const tackle = this.defense?.tackle, tackling = p === this.player && tackle && tackle.elapsed < .55;
 
       c.save();
       c.translate(p.x, p.y + hop);
       const scale = this.playerScale(p);
       c.scale(scale, scale);
+      if (tackling) c.rotate(Math.sign(tackle.target.x - tackle.from.x || 1) * Math.sin(Math.min(1, tackle.elapsed / .55) * Math.PI) * .7);
+      if (p === this.defense?.opponent && tackle?.success && tackle.elapsed < .5) c.rotate(-.2 * Math.sin(tackle.elapsed / .5 * Math.PI));
 
       // 1. Zemin Gölgelendirmesi
       c.fillStyle = 'rgba(10,32,18,0.45)';
@@ -822,7 +923,7 @@
 
       // 2. Bacaklar & Kramponlar (16-bit Pixel Art)
       const legL_stride = isShooting ? -stride * 1.5 : stride;
-      const legR_stride = isShooting ? 6 : -stride;
+      const legR_stride = tackling ? 12 : isShooting ? 6 : -stride;
 
       // Çoraplar
       c.fillStyle = sockColor;

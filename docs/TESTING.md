@@ -9,6 +9,7 @@ From the repository root, with Node.js installed:
 ```bash
 node --check src/js/game.js
 node --check src/js/environment.js
+node --check src/js/defense.js
 node --test tests/game.test.cjs
 git diff --check
 ```
@@ -41,6 +42,7 @@ python3 -m http.server 8000
 | From distance | Powerful shots reach the goal; poor power or excessive loft can lose the chance. |
 | The through ball | A pass toward the run marker can be received; control then transfers to the receiver for the next action. |
 | Two against two | Aim freely toward goal or teammates; teammates can receive and return a pass; defenders can intercept passes and block shots. |
+| Win the Ball | Draw an intercepting route from blue; red keeps dribbling. A well-positioned green tap wins possession; bad timing misses; a wrong/late route lets red escape. |
 | Read the game | An early tap near the marked space can meet the pass; poor positioning or no input loses the chance. |
 
 ## Player, ball, and goal proportions
@@ -78,12 +80,23 @@ Test full-power bottom contact with left, central, and right aim directions: the
 
 ## Session flow
 
-- Complete all five highlights and verify that every resolved chance offers a clear result.
-- Confirm that the fifth result opens the session summary with goals, successful passes, missed chances, and a score from 0 to 100.
+- Complete all six highlights and verify that every resolved chance offers a clear result.
+- Confirm that the sixth result opens the session summary with goals, successful passes, balls won, missed chances, and a score from 0 to 100.
 - Restart before and after a completed pass. Statistics from the current highlight should reset without changing earlier highlights.
 - Restart during the brief goal or save animation. The previous result must not interrupt the restarted highlight.
 - Use **Play Again** and confirm that the session restarts at highlight one with empty statistics.
 - Toggle audio and verify that the game also works with sound disabled.
+
+## Win the Ball
+
+- Start the sixth highlight through **NEXT** after off-ball reception. Verify 6/6 and six progress dots, with red initially holding the ball.
+- Drag from blue through multiple points, release, and watch blue follow the bends while red continues dribbling. A stationary tap or a cancelled drag must not commit a route.
+- Lead red's run. Once the ring appears, wait until **TAP!** is green and tap/click. Confirm a visible lunge, leg extension, transferred possession, and immediate **BALL WON!** feedback.
+- Repeat with an early tap and with a tap just after green. Both must produce **MISSED TACKLE!** while red retains the ball. Correct clock timing from behind or outside reach must not win possession.
+- Draw away from red, commit too late, or do nothing. Red must escape within roughly 5–10 seconds, with **OPPONENT ESCAPED!** and no free possession win.
+- Repeat on mouse and touch, at portrait and short landscape sizes. Check that the ring stays visible without obscuring the dribbler; its size must remain readable across zoom levels.
+- Open settings/help while planning or running: both players and the tackle clock must pause. Rotate during a captured route: it must cancel safely. Restart during drawing and after each outcome; no route, old possession, delayed result, or defensive statistic should leak into the retry.
+- Follow **NEXT** after the defensive result. Summary must count a ball win separately from goals and include it in the rating. **PLAY AGAIN** must reset all six outcomes and ball-win statistics.
 
 ## Goalkeeper positions
 
@@ -131,12 +144,26 @@ Rotate the device during an unfinished drag and confirm that it cancels without 
 
 - Confirm the arena fills the viewport without a page heading, sidebar, footer, coaching card, or scenario list.
 - Check the top score, chance counter, restart, and settings controls for overlap at 320 × 480 through 1920 × 1080.
-- Check all five scenarios: no shoot/pass buttons or fixed bottom dock should appear. The power indicator should appear while dragging and disappear after release or cancellation.
+- Check all six scenarios: no shoot/pass buttons or fixed bottom dock should appear. The power indicator should appear while dragging and disappear after release or cancellation.
 - Open **?** from the title screen and during contact selection. Verify pause/resume and both close controls. The big contact ball must fit between its heading and timer.
 - In settings, change venue/weather and toggle sound. Confirm these remain usable without a permanent toolbar or side panel.
-- Play a complete five-highlight session with native touch, including passes and off-ball reception. Check result/summary/replay buttons on short portrait and landscape screens.
+- Play a complete six-highlight session with native touch, including passes and off-ball reception. Check result/summary/replay buttons on short portrait and landscape screens.
+
+## Highlight picker and practice
+
+- Open **CHOOSE HIGHLIGHT** on the title screen and play each of the six entries directly. The first four must enter aiming, the fifth off-ball reception, and the sixth defense.
+- Win or lose the defensive practice attempt, then use **RETRY**. The same opponent/player placement must return with a clean timer, route, result, and statistics.
+- Use the top-left chance counter during play, or **CHOOSE HIGHLIGHT** on a result/summary, to select a different action. The picker must pause the current attempt; closing it should resume without a reset.
+- Select **PLAY ALL 6** from the picker. It must start a fresh full sequence at 1/6, with normal **NEXT** progression and the final summary after the sixth highlight.
+- At small portrait and short landscape sizes, scroll the picker and reach all six cards plus **PLAY ALL 6**. Check title/result/summary selection buttons for clipping.
 
 ## Validation history
+
+The ball-physics update passes 56 regression tests. Real-time Chrome checks with native mouse and emulated touch (1280 × 900 and 390 × 844) also passed topped shots, bouncing goals, chips over an advanced keeper, clear over-bar misses, and curve goals; no runtime errors occurred. Bounce and chip screenshots were reviewed. A same-physics comparison against the previous keeper tracking confirmed several curved shots can now beat the keeper where continuous tracking saved them. New cases cover progressive top-contact power loss, the lift/pace tradeoff, energy loss and settling over multiple bounces, matching trajectories at 30/60/120 FPS, faster ground-spin decay, delayed keeper observations, committed dives, and a live bouncing goal with impact feedback. The soft-chip regression now uses lower contact (0.94) to account for the new forward-pace tradeoff. A complete six-highlight native-touch session, summary, replay, rotation cancellation, and desktop mouse flow also passed.
+
+Direct-selection validation passed 48 automated tests, covering all six entry states, independent practice statistics, defensive retry, selection-menu pausing/cancellation, invalid indices, and returning to full-series progression. Native mouse/touch checks at 1280 × 900, 390 × 844, 568 × 320, and 320 × 480 selected the defensive action through the visible menu, won possession, retried it, switched to a different highlight, and started the full series. Desktop also opened all six cards directly. Title/result buttons and picker bounds were checked, with no runtime exceptions. The complete six-highlight native-touch flow, summary, replay, and desktop mouse flow also passed after the selector was added.
+
+Win the Ball passed 43 automated tests including the original attacking regressions, six-highlight progression, real path following, ownership, all three defensive outcomes, shielding/reach checks, late arrivals, frame-rate consistency, cancellation, pause, restart, duplicate-score protection, and defensive summary/rating. Normal-speed native mouse/touch runs passed success on desktop/portrait, a mistimed tackle in short landscape, and a wrong-route escape. These ran about 5–9 seconds including the intro and had no runtime exceptions. A complete native-touch six-highlight session also passed, including passes, off-ball reception, the successful defensive action, summary, and replay. A final 320 × 480 native-touch run verified rotation cancellation, restart, settings/help pause/resume, readable timing-ring placement, the tackle lunge, all four summary statistics, and replay reset.
 
 The unified-kick update passed 33 regression tests. Pass/return-pass tests now use the same kick helper as goals, with no mode parameter. Additional cases verify a direct goal in a combination highlight and a received pass in a long-shot highlight, preventing hidden scenario-specific action restrictions. A complete native-touch session passed through goals, a through pass, a return pass, off-ball reception, summary, and replay with no action-selection clicks; desktop mouse flow also resolved. UI checks at 320 × 480, 568 × 320, and 1280 × 900 confirmed that the selector/dock are absent and power appears only while dragging. No runtime errors occurred.
 

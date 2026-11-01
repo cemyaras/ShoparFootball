@@ -2,7 +2,7 @@
 
 ## Runtime
 
-`index.html` provides a viewport-sized arena, floating HUD and gesture input, overlays, and native settings/help dialogs. It loads `src/css/style.css` and defers `src/js/environment.js` followed by `src/js/game.js` until the document has been parsed.
+`index.html` provides a viewport-sized arena, floating HUD and gesture input, overlays, and native settings/help dialogs. It loads `src/css/style.css` and defers `src/js/environment.js`, `src/js/defense.js`, and then `src/js/game.js` until the document has been parsed.
 
 The JavaScript uses a strict-mode closure to keep implementation details scoped. A `FootballGame` instance is available as `window.footballGame` for inspection. The script stays compatible with direct `file://` loading; it does not require module imports, network requests, or a bundler.
 
@@ -10,13 +10,14 @@ The JavaScript uses a strict-mode closure to keep implementation details scoped.
 
 | System | Responsibility |
 | --- | --- |
-| Scenario definitions | Initial positions, descriptions, and coaching tips for all five highlights. |
+| Scenario definitions | Initial positions, descriptions, and coaching tips for all six highlights. |
 | State machine | Valid interaction phases, overlay visibility, and progression through a session. |
 | Input | Pointer capture, drag direction and power, contact selection, cancellation, and interception destinations. |
 | Physics | Kick velocity, spin, height, friction, collisions, goal-line crossing, and out-of-play checks. |
 | AI | Delayed goalkeeper reactions, limited movement and dives, defender pressure, and teammate receiving runs. |
 | Rendering | Procedural pitch, players, ball, trajectory preview, trails, contact close-up, and celebrations. |
 | Environment | Venue scenery, surface texture, weather lighting/particles, and local preferences. |
+| Defense | A drawn route, opponent possession, position-dependent tackle timing, and defensive result animation. |
 | Audio | Optional tones synthesized through the Web Audio API without external audio assets. |
 
 `FootballGame` owns the state and coordinates the systems through methods. `AudioSystem` manages sound independently. Rendering reads gameplay state; simulation changes happen in the update and interaction methods.
@@ -26,12 +27,13 @@ The JavaScript uses a strict-mode closure to keep implementation details scoped.
 | State | Behavior and exits |
 | --- | --- |
 | `TITLE` | Waits for play, then enters `HIGHLIGHT_INTRO`. |
-| `HIGHLIGHT_INTRO` | Sets up the highlight, then enters `AIMING` or `INTERCEPTION`. |
-| `AIMING` | Pauses field simulation while the user selects an action and drags; a committed aim enters `BALL_CONTACT`. |
+| `HIGHLIGHT_INTRO` | Sets up the highlight, then enters `AIMING`, `INTERCEPTION`, or `DEFENDING`. |
+| `AIMING` | Pauses field simulation while the user aims and drags; a committed aim enters `BALL_CONTACT`. |
 | `BALL_CONTACT` | Waits for contact or a six-second timeout, then enters `BALL_IN_MOTION`. |
 | `BALL_IN_MOTION` | Advances physics and AI. A completed pass returns to `AIMING`; a resolved chance leads to `RESULT`. |
 | `INTERCEPTION` | Moves an incoming pass and lets the user choose a player destination. Receiving enters `AIMING`; losing the chance leads to `RESULT`. |
-| `RESULT` | Offers the next highlight, or `SESSION_SUMMARY` after the fifth. |
+| `DEFENDING` | Lets the user draw one route, runs it while the opponent dribbles, then accepts a timed tackle. Resolution leads to `RESULT`. |
+| `RESULT` | Offers the next highlight, or `SESSION_SUMMARY` after the sixth. |
 | `SESSION_SUMMARY` | Shows session statistics and offers a fresh session. |
 
 A brief pending-result delay leaves goals and saves visible before the result overlay appears. Restarting a highlight clears pending results and restores the statistics captured at its start.
@@ -72,15 +74,15 @@ The keeper retains the goal proportions described above. Player/ball ratios are 
 
 ## Goalkeeper positioning
 
-Starting a session shuffles a plan with two advanced keepers and three near the goal line. A near-line keeper starts at y = 100; an advanced keeper starts at y = 174, leaving a visible gap behind them. The plan belongs to the session, so restarting the same highlight preserves the initial placement. A new session shuffles again.
+The original five attacking highlights retain their shuffled plan with two advanced keepers and three near the goal line; the defensive highlight does not use goalkeeper controls. A near-line keeper starts at y = 100; an advanced keeper starts at y = 174, leaving a visible gap behind them. The plan belongs to the session, so restarting the same highlight preserves the initial placement. A new session shuffles again.
 
-Both profiles track the ball laterally. An advanced keeper holds depth against ground shots and passes, then backpedals at a limited speed when a lofted shot approaches. This creates a real chip opportunity without teleporting back to the line or changing shot physics. Keeper-clearance detection compares the ball against the moving keeper plane, and the intro/coach text calls attention to the open space.
+Both profiles read the visible ball flight every 160 ms after the initial reaction delay. A dive commits to its direction and lateral target until the animation ends, allowing late curve to beat an early commitment. Neither profile reads the chosen contact point or planned trajectory. An advanced keeper holds depth against ground shots and passes, then backpedals at a limited speed when a lofted shot approaches. This creates a real chip opportunity without teleporting back to the line or changing shot physics. Keeper-clearance detection compares the ball against the moving keeper plane, and the intro/coach text calls attention to the open space.
 
 ## Ball contact and possession
 
 Possession, reception, and kick execution use the same foot-level ball position. The ball sits beside the right boot, and the aim preview begins at the same point as the actual kick. Goalkeeper reaction timing allows for this slightly longer shooting distance while keeping central shots saveable.
 
-Drag distance sets kick power, and the opposite drag vector sets direction. The contact tap is normalized within the close-up ball. Its horizontal offset sets spin, its vertical offset changes loft, and edge or late contact affects accuracy or strength. Shot power scales upward launch as well as forward velocity, so full-power bottom contact can clear the bar rather than repeatedly arriving at crossbar height. All kicks share this launch model, friction, and playback timing; there is no shot/pass mode or hidden intent classification.
+Drag distance sets kick power, and the opposite drag vector sets direction. The contact tap is normalized within the close-up ball. Its horizontal offset sets spin, its vertical offset changes loft and forward pace, and edge or late contact affects accuracy or strength. Upper contact progressively loses power; lower contact trades some forward speed for lift. Shot power scales upward launch as well as forward velocity, so full-power bottom contact can clear the bar rather than repeatedly arriving at crossbar height. Ball integration uses steps no larger than 1/240 second, rotates velocity without adding curve energy, and solves the time of ground contact within a step. Landings retain 46% of vertical impact speed above a settling threshold, reduce horizontal speed and spin, and return an impact event. Live callers emit a short ground ring and optional bounce sound; aim previews remain free of effects. Spin decays much faster on the ground and has less influence on rolling direction. Scored balls use 20% restitution inside the net to settle during the result animation. All kicks share this launch model, friction, and playback timing; there is no shot/pass mode or hidden intent classification.
 
 The aim preview and live motion share the velocity and integration methods. The preview assumes central contact; the later contact tap can change the actual trajectory.
 
@@ -98,8 +100,22 @@ Session statistics and outcomes are held in memory. `FootballEnvironment` stores
 
 Four independent weather presets alter the presentation. Rain adds puddles and moving streaks; snow adds ground patches and drifting flakes. Cloudy weather cools/dims the scene, while sunny weather adds a warm tint. Particle counts are fixed, textures use deterministic positions, and reduced-motion users receive static precipitation. Atmosphere is drawn before the contact close-up and outcome banner, keeping play feedback legible.
 
-The native settings and help dialogs provide keyboard focus trapping, Escape dismissal, and focus restoration. Opening either dialog cancels a captured drag and pauses `update`, including contact timeouts and pending results. Closing a dialog resets the frame timestamp before resuming. Selections update immediately without reloading actors or changing physics, session progress, or scores.
+The native settings, help, and selection dialogs provide keyboard focus trapping, Escape dismissal, and focus restoration. Opening a settings/help/selection dialog cancels a captured drag and pauses `update`, including contact timeouts and pending results. Closing a dialog resets the frame timestamp before resuming. Selections update immediately without reloading actors or changing physics, session progress, or scores.
 
 ## Game interface
 
-The arena occupies the viewport with no document-style header, sidebar, or footer. Score and five-chance progress form a small top HUD. There is no kick-selection dock. A non-interactive power track appears near the bottom only while dragging. Settings contain venue, weather, and sound; the question-mark button opens a short control guide. Instructions are available on demand instead of remaining around the pitch. Scenario names and exposed-keeper warnings appear briefly as toasts. Detailed result/flight announcements remain available to assistive technology, while the visible UI emphasizes the ball, outcome, and next action.
+The arena occupies the viewport with no document-style header, sidebar, or footer. Score and six-chance progress form a small top HUD. There is no kick-selection dock. A non-interactive power track appears near the bottom only while dragging. Settings contain venue, weather, and sound; the question-mark button opens a short control guide. Instructions are available on demand instead of remaining around the pitch. Scenario names and exposed-keeper warnings appear briefly as toasts. Detailed result/flight announcements remain available to assistive technology, while the visible UI emphasizes the ball, outcome, and next action.
+
+## Win the Ball
+
+`DefensiveHighlight` encapsulates the sixth highlight and reuses the existing player objects, `movePlayer`, Pointer Events, Canvas transform, sprites, audio, banners, and result/summary flow. The `DEFENDING` state has planning, running, and resolved phases. It uses a stable camera focused on the two participants. No attacking physics or input rules change in the original five highlights.
+
+Red starts in possession. Its deterministic dribble moves continuously, including while a route is drawn; blue follows the actual sampled polyline at a bounded speed after release. Sampling filters near-duplicate points and limits route length/point count. Cancellation discards only the preview; restart releases pointer capture before rebuilding the highlight. Settings/help pause both movement and the defensive clock.
+
+The tackle ring appears within 82 world units. Its cursor shares a 1.2-second cycle with the dribbler's exposed-ball animation. Green requires all of: an actual ball distance of at most 43 units, a side/front approach rather than a shielded position behind red, and the visible timing window. Tapping outside that window while close produces `missed_tackle`; tapping from too far away cannot win possession. An unsuccessful route or no action reaches `opponent_escaped` at 7.2 seconds of active play. The intro and 1.3-second resolution put normal runs at approximately 5–10 seconds.
+
+A successful tackle lunges the blue sprite toward the ball, extends a leg, and transfers the ball to its boot. Failure leaves red in possession and moving away. `ball_won` counts as a successful highlight and increments `stats.tackles`, without incrementing goals or starting a counterattack. The summary exposes **BALL WON** and rates the six-highlight session with 14 points per goal/ball win, up to nine pass points, and seven for off-ball reception (capped at 100).
+
+## Direct highlight selection
+
+The picker is populated from `SCENARIOS` and opens from the title, chance counter, results, or summary. It pauses the same simulation/timers as settings and help; closing it preserves the current attempt. `practiceIndex` is null for the full six-highlight sequence, or the chosen scenario index for single-highlight practice. Starting a selection resets session statistics and transient state through the existing highlight setup. Practice results use **RETRY**, which calls the existing restart path instead of advancing or opening the summary. **PLAY ALL 6** clears practice mode and begins the original sequence at highlight one.
