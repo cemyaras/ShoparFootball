@@ -61,7 +61,7 @@ try {
     if(mobile){await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...contact,id:1}]});await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}else await click(contact.x,contact.y);
     await until("footballGame.state==='RESULT'");
     check(await evaluate("footballGame.resolution.kind==='goal'"), 'Native penalty goal');
-    await evaluate('footballGame.beginSession()'); check(await evaluate('!footballGame.session.match&&footballGame.practiceIndex===null&&footballGame.definitions.length===10'), 'Play All remains available');
+    await evaluate('footballGame.beginSession()'); check(await evaluate('!footballGame.session.match&&footballGame.practiceIndex===null&&footballGame.session.seriesIndices.length===10&&footballGame.definitions.length===11'), 'Play All remains available');
   }
   check(errors.length===0, errors.join('\n')); console.log(`${checks} browser checks passed`);
 } finally { close(); }

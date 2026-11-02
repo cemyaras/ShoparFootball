@@ -37,7 +37,7 @@ await touch('touchEnd');await wait(1500);
 assert('Native defensive tackle wins the ball',await evaluate("footballGame.state==='RESULT'&&footballGame.resolution.kind==='ball_won'&&footballGame.stats.tackles===1"));
 await tap(await center('next-button'));await wait(950);
 assert('Seventh highlight starts pass interception',await evaluate("footballGame.index===6&&footballGame.state==='DEFENDING'&&document.getElementById('chapter-number').textContent==='7/10'"));
-await tap(await world(550,410));
+await tap(await world(550,340));
 for(let i=0;i<350;i++){if(await evaluate("footballGame.state==='RESULT'"))break;await wait(20);}
 assert('Native pass interception wins second defensive ball',await evaluate("footballGame.resolution.kind==='pass_won'&&footballGame.stats.tackles===2"));
 await tap(await center('next-button'));await wait(950);

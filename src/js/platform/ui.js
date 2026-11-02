@@ -13,7 +13,7 @@
       game.listen($('next-button'), 'click', () => game.nextHighlight());
       for (const id of ['highlight-button', 'select-highlight-button', 'result-select-button', 'summary-select-button']) game.listen($(id), 'click', () => game.openHighlightPicker());
       $('chapter-progress').innerHTML = this.definitions.map(() => '<i></i>').join('');
-      for (const id of ['play-button', 'play-all-button']) $(id).innerHTML = `PLAY ALL ${this.definitions.length} <span aria-hidden="true">▶</span>`;
+      for (const id of ['play-button', 'play-all-button']) $(id).innerHTML = `PLAY ALL ${game.session.seriesIndices.length} <span aria-hidden="true">▶</span>`;
       $('highlight-list').innerHTML = this.definitions.map((scenario, index) => `<button class="highlight-option${scenario.category === 'defense' ? ' defensive-option' : ''}" type="button" data-highlight="${index}"><span aria-hidden="true">${String(index + 1).padStart(2, '0')}</span><strong>${scenario.title.replace('.', '')}</strong></button>`).join('');
       game.listen($('highlight-list'), 'click', e => { const button = e.target.closest('button[data-highlight]'); if (button) game.startPractice(Number(button.dataset.highlight)); });
       game.listen($('highlight-close'), 'click', () => $('highlight-dialog').close());
@@ -104,12 +104,12 @@
       const match = game.session.match;
       $('score').textContent = match ? match.score.home : game.stats.goals;
       $('opponent-score').textContent = match ? match.score.away : 0;
-      $('chapter-number').textContent = match ? `${match.cursor + 1}/6${match.continuation ? ' · KEEPER' : ''}` : `${game.index + 1}/${this.definitions.length}`;
+      $('chapter-number').textContent = match ? `${match.cursor + 1}/6${match.continuation ? ' · KEEPER' : ''}` : `${game.session.displayNumber}/${game.session.displayCount}`;
       $('restart-button').disabled = Boolean(match) || [State.TITLE, State.SESSION_SUMMARY].includes(game.state);
       $('help-button').classList.toggle('hidden', Boolean(game.controllerPresentation().hideHelp));
       game.canvas.setAttribute('aria-label', game.controllerPresentation().ariaLabel || 'Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike.');
-      $('bottom-hint').textContent = game.state === State.INTERCEPTION ? 'Tap the ring to receive.' : game.state === State.AIMING ? 'Drag back to aim. Release, then tap the ball.' : game.state === State.BALL_CONTACT ? 'Tap a point on the ball.' : '';
-      [...$('chapter-progress').children].forEach((el, i) => { el.hidden = Boolean(match); el.className = i === game.index ? 'current' : game.outcomes[i] === true ? 'done' : game.outcomes[i] === false ? 'failed' : ''; });
+      $('bottom-hint').textContent = game.controllerPresentation().hint || (game.state === State.INTERCEPTION ? 'Tap the ring to receive.' : game.state === State.AIMING ? 'Drag back to aim. Release, then tap the ball.' : game.state === State.BALL_CONTACT ? 'Tap a point on the ball.' : '');
+      [...$('chapter-progress').children].forEach((el, i) => { el.hidden = Boolean(match) || (game.practiceIndex === null && Boolean(this.definitions[i].practiceOnly)); el.className = i === game.index ? 'current' : game.outcomes[i] === true ? 'done' : game.outcomes[i] === false ? 'failed' : ''; });
       game.updateFlightUI();
     }
     updatePower(power) {

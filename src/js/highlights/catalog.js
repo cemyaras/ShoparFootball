@@ -14,4 +14,14 @@
   registry.register({ id: 'save-the-penalty', category: 'defense', keeperEligible: false, title: 'Save the Penalty', player: [500, 400], mates: [], defenders: [[500, 250]], outcomes: outcomes.penalty, create: context => new window.ShoparFootball.PenaltySaveController(context) });
   registry.register({ id: 'save-the-shot', category: 'defense', keeperEligible: false, title: 'Save the Shot', player: [500, 440], mates: [], defenders: [[440, 350]], outcomes: outcomes.shot, create: context => new window.ShoparFootball.PenaltySaveController(context, true) });
   registry.register({ id: 'take-the-penalty', category: 'attack', keeperEligible: false, title: 'Take the Penalty', tag: 'FROM THE SPOT', description: 'You and the keeper. Make it count.', intro: 'A penalty for SFC. Pick your corner.', player: [500, 250], mates: [], defenders: [], tip: 'Place your shot away from the keeper.', outcomes: outcomes.attack, create: context => new window.ShoparFootball.AttackController(context) });
+  registry.register({
+    id: 'draw-the-shot', title: 'Draw the Shot', category: 'attack', practiceOnly: true, keeperEligible: false,
+    player: [500, 365], mates: [], defenders: [[530, 235]],
+    outcomes: { ...outcomes.attack,
+      save: { ...outcomes.attack.save, detail: 'The keeper reached your shot. Try a curve toward the far corner.' },
+      blocked: { ...outcomes.attack.blocked, detail: 'A defender reached your shot. Draw a path around the defender.' },
+      weak: { ...outcomes.attack.weak, detail: 'The ball ran out of pace. Draw a longer path toward goal.' } },
+    intro: 'Draw a path from the ball. Release to shoot.', tip: 'Draw toward goal. Bend your path around the defender.',
+    create: context => new window.ShoparFootball.DrawShotController(context)
+  });
 })();

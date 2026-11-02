@@ -34,6 +34,12 @@
       this.drawing.drawPitch(c); this.drawing.drawGoalBack(c); this.drawing.drawRunMarkers(c);
       this.scene.drawWorld(c);
       if (this.scene.state === State.AIMING && this.scene.aim?.power > .03) this.drawing.drawAim(c);
+      const preview = this.scene.presentation().shotPreview;
+      if (preview?.length) {
+        c.save(); c.strokeStyle = '#d0f58d'; c.lineWidth = 3 / v.scale; c.beginPath();
+        preview.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y));
+        c.stroke(); c.restore();
+      }
       this.drawing.drawTrail(c); this.drawing.drawBallShadow(c, this.scene.ball);
       const actors = [this.scene.player, ...this.scene.mates, ...this.scene.defenders, this.scene.keeper].sort((a, b) => a.y - b.y);
       const aboveGoal = this.drawing.ballAboveGoal(), held = this.scene.resolution?.kind === 'save' || this.scene.presentation().ballHeld; let drawn = false;
@@ -584,6 +590,7 @@
     drawPossessionHint(c) {
       const b = this.scene.ball, pulse = 1 + Math.sin(this.scene.time * 4) * .09;
       c.save(); c.strokeStyle = '#ffeb3b88'; c.lineWidth = 2; c.beginPath(); c.arc(b.x, b.y, 35 * pulse, 0, Math.PI * 2); c.stroke();
+      if (this.scene.presentation().drawToShoot) { c.restore(); return; }
       c.strokeStyle = '#ffeb3b'; c.lineWidth = 2; c.beginPath(); c.moveTo(b.x, b.y + 69); c.lineTo(b.x, b.y + 86); c.lineTo(b.x - 4, b.y + 82); c.moveTo(b.x, b.y + 86); c.lineTo(b.x + 4, b.y + 82); c.stroke(); c.restore();
     }
     drawContact(c) {

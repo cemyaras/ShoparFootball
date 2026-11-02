@@ -24,7 +24,7 @@
       game.banner = { ...value(descriptor.banner, chip) };
       const explanation = descriptor.detail === undefined ? (success ? defaults.attack.goal.detail(chip) : detail) : value(descriptor.detail, chip);
       game.ui.showResult({ title: value(descriptor.title, chip), symbol: success ? '↗' : descriptor.symbol || '↘', success,
-        number: game.index + 1, total: this.definitions.length, detail: match?.needsSave ? 'The opponent is through! Continue to control your keeper.' : game.defense ? detail : explanation, continuation: match?.needsSave, numberLabel: match ? `${match.cursor + 1}/6${match.continuation ? ' · KEEPER' : ''}` : null, practice: game.practiceIndex !== null });
+        number: game.session.displayNumber, total: game.session.displayCount, detail: match?.needsSave ? 'The opponent is through! Continue to control your keeper.' : game.defense ? detail : explanation, continuation: match?.needsSave, numberLabel: match ? `${match.cursor + 1}/6${match.continuation ? ' · KEEPER' : ''}` : null, practice: game.practiceIndex !== null });
       game.pendingResult = { kind, wait: game.defense ? 1.3 : descriptor.delay };
       game.aim = null; game.updateUI(); game.updateFlightUI();
     }

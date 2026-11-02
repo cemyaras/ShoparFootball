@@ -75,7 +75,10 @@
     }
     executeKick() {
       if (!this.context.play.kick || !this.context.play.contact) return;
-      Object.assign(this.context.ball, this.context.physics.kickVelocity(this.context.play.kick, this.context.play.contact), { age: 0, z: 0 });
+      this.launchShot(this.context.physics.kickVelocity(this.context.play.kick, this.context.play.contact));
+    }
+    launchShot(velocity) {
+      Object.assign(this.context.ball, velocity, { age: 0, z: 0 });
       Object.assign(this.context.ball, this.context.geometry.possessionPosition(this.context.play.controlled));
       // A short reaction delay keeps corner shots viable from the foot-level origin.
       this.context.play.motionTime = 0; this.context.effects.trail = []; this.context.keeper.reaction = GOAL.keeperReaction; this.context.keeper.dive = 0; this.context.keeper.diveCooldown = 0; this.context.keeper.readTime = 0;
@@ -178,9 +181,10 @@
         } else this.context.physics.movePlayer(p, p.startX, p.startY - 28, 65, dt);
       }
     }
+    integrateShot(dt) { return this.context.physics.integrateBall(this.context.ball, dt); }
     updateMotion(dt) {
       const previousKeeperPlane = this.context.keeper.y - 7;
-      this.updateAI(dt); const b = this.context.ball, previous = { x: b.x, y: b.y, z: b.z }; this.ballImpact(this.context.physics.integrateBall(b, dt));
+      this.updateAI(dt); const b = this.context.ball, previous = { x: b.x, y: b.y, z: b.z }; this.ballImpact(this.integrateShot(dt));
       if (this.context.play.flight) {
         this.context.play.flight.maxHeight = Math.max(this.context.play.flight.maxHeight, b.z);
         const plane = this.context.keeper.y - 7;

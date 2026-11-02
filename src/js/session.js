@@ -10,6 +10,9 @@
       this.stats = freshStats(); this.outcomes = [];
       this.keeperPlan = Array(definitions.length).fill('line');
     }
+    get seriesIndices() { return this.definitions.flatMap((s, i) => s.practiceOnly ? [] : [i]); }
+    get displayNumber() { return this.practiceIndex === null ? this.seriesIndices.indexOf(this.index) + 1 : this.index + 1; }
+    get displayCount() { return this.practiceIndex === null ? this.seriesIndices.length : this.definitions.length; }
     memoryFor(id) {
       if (!this.highlightMemory.has(id)) this.highlightMemory.set(id, {});
       return this.highlightMemory.get(id);
@@ -17,7 +20,7 @@
     begin(practiceIndex, makeKeeperPlan) {
       this.match = null; this.practiceIndex = practiceIndex;
       this.keeperPlan = makeKeeperPlan();
-      this.stats = freshStats(); this.outcomes = []; this.index = practiceIndex ?? 0;
+      this.stats = freshStats(); this.outcomes = []; this.index = practiceIndex ?? this.seriesIndices[0];
     }
     beginMatch(makeKeeperPlan, random = Math.random) {
       this.begin(null, makeKeeperPlan);
@@ -34,11 +37,12 @@
         return action;
       }
       if (this.practiceIndex !== null) return 'retry';
-      if (this.index === this.definitions.length - 1) return 'summary';
-      this.index++; return 'next';
+      const next = this.seriesIndices.find(index => index > this.index);
+      if (next === undefined) return 'summary';
+      this.index = next; return 'next';
     }
     createKeeperPlan(random = Math.random) {
-      const eligible = this.definitions.map((scenario, index) => scenario.keeperEligible ? index : -1).filter(index => index >= 0);
+      const eligible = this.definitions.map((scenario, index) => scenario.keeperEligible && !scenario.practiceOnly ? index : -1).filter(index => index >= 0);
       const plan = eligible.map((_, index) => index < 2 ? 'advanced' : 'line');
       for (let i = plan.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [plan[i], plan[j]] = [plan[j], plan[i]]; }
       const profiles = [];
@@ -46,7 +50,7 @@
       return profiles;
     }
     rating() {
-      return clamp(Math.round((this.stats.goals + this.stats.tackles + (this.stats.saves || 0)) * (84 / this.definitions.length) + Math.min(this.stats.passes, 3) * 3 + this.stats.receives * 7), 0, 100);
+      return clamp(Math.round((this.stats.goals + this.stats.tackles + (this.stats.saves || 0)) * (84 / this.seriesIndices.length) + Math.min(this.stats.passes, 3) * 3 + this.stats.receives * 7), 0, 100);
     }
   }
   window.ShoparFootball.Session = Session;
