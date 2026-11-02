@@ -133,7 +133,12 @@
     }
     startSession() {
       if (![State.TITLE, State.SESSION_SUMMARY].includes(this.state)) return;
-      this.beginSession();
+      if (this.session.match) this.startMatch(); else this.beginSession();
+    }
+    startMatch(random = Math.random) {
+      this.cancelPointer(this.pointer?.id); this.ui.closeHighlightPicker();
+      this.session.beginMatch(() => this.createKeeperPlan(), random);
+      this.beginHighlight(); this.audio.play('tap');
     }
     openHighlightPicker() {
       this.cancelPointer(this.pointer?.id); this.ui.openHighlightPicker();
@@ -154,6 +159,7 @@
       this.toast(this.definitions[this.index].title.replace('.', '') + (this.keeper.profile === 'advanced' ? ' · Keeper off the line' : ''), 1.8);
     }
     restart() {
+      if (this.session.match) return;
       this.session.restoreCheckpoint(); this.beginHighlight();
     }
     nextHighlight() {

@@ -1,6 +1,6 @@
 # Shopar Football
 
-A gesture-driven football game built around eight short highlights. Pull back to aim, choose your contact point, and watch your shot or pass unfold.
+A gesture-driven football game built around ten short highlights and a complete Match Mode. Pull back to aim, choose your contact point, and watch your shot or pass unfold.
 
 Built with HTML5 Canvas, vanilla JavaScript, and CSS. No framework, game engine, backend, external assets, or build step is required.
 
@@ -20,7 +20,7 @@ To try the game on a phone or tablet, connect it to the same local network as yo
 
 ## Features
 
-- Eight playable scenarios: one on one, long shot, through ball, two against two, off-ball reception, **Win the Ball**, **Cut the Pass**, and **Save the Penalty**.
+- Ten playable scenarios: one on one, long shot, through ball, two against two, off-ball reception, **Win the Ball**, **Cut the Pass**, **Save the Penalty**, **Save the Shot**, and **Take the Penalty**.
 - Drag direction and distance control kick direction and power.
 - A second tap sets the contact point, affecting actual curve and loft.
 - Ball physics include contact-dependent pace, airborne curve, diminishing bounces, rolling friction, collisions, saves, and out-of-play detection.
@@ -32,11 +32,21 @@ To try the game on a phone or tablet, connect it to the same local network as yo
 - Sunny, cloudy, rainy, and snowy weather, with procedural lighting, puddles, and snowfall.
 - Highlight restart, session statistics, performance rating, and optional synthesized audio.
 
+## Match Mode
+
+Choose **MATCH MODE** to play SFC against ROV, starting at 0–0. Six base positions alternate three attacks with Win the Ball, Cut the Pass and an open-play keeper save. Failed tackles or interceptions open one additional Save the Shot scene each, for six to eight playable scenes. Choose **CONTINUE** after a failed defense to control the keeper; the failure itself never awards a goal.
+
+Only actual goals change the match score. Each position has one attempt; replay starts a fresh match after victory, draw or defeat. The counter tracks six base positions and labels keeper continuations separately. Switching to practice or Play All ends the current match.
+
+A quarter of matches contain one penalty, equally likely for either team. It replaces one attack or the base keeper scene. Defensive failures always lead to open-play shots. There are no background goals, extra time or shoot-outs.
+
+**Save the Shot** uses the same swipe controls as Save the Penalty, with a moving shooter and a longer flight. **Take the Penalty** uses the usual aiming/contact controls from the spot without outfield players.
+
 ## How to play
 
 Use the weather icon in the top-right corner to open **Match settings**, choose your pitch/weather, and toggle sound. The match pauses while settings or **?** help is open. Choices carry across highlights and are remembered on this browser when local storage is available. The environments change the scene; shot physics and goal dimensions remain consistent.
 
-1. Select **PLAY ALL 8** for a full session, or **CHOOSE HIGHLIGHT** to practise any one of the eight scenarios. Use **?** for the quick control guide.
+1. Select **PLAY ALL 10** for a full session, or **CHOOSE HIGHLIGHT** to practise any one of the ten scenarios. Use **?** for the quick control guide.
 2. Drag backward from near the ball. The kick travels opposite your drag; a longer pull adds power. Every kick uses the same controls and physics: aim at the goal to shoot or toward a teammate to combine.
 3. Release to open the close-up ball, then tap your contact point:
 
@@ -56,7 +66,7 @@ For a chip, tap moderately below center. Combining strong power with contact nea
 
 For the off-ball highlight, tap a destination on the pitch. Your player moves automatically; reach the incoming pass before it gets away. After a teammate receives a pass, control transfers to that player.
 
-To test a particular scenario, open **CHOOSE HIGHLIGHT** and select its name. **Win the Ball** opens the defensive action immediately. In single-highlight practice, the result button is **RETRY**, which resets that same scenario and its statistics. Use the top-left chance counter or the result/summary selection button to switch highlights; closing the menu resumes the current attempt. **PLAY ALL 8** returns to the normal sequence with a fresh session.
+To test a particular scenario, open **CHOOSE HIGHLIGHT** and select its name. **Win the Ball** opens the defensive action immediately. In single-highlight practice, the result button is **RETRY**, which resets that same scenario and its statistics. Use the top-left chance counter or the result/summary selection button to switch highlights; closing the menu resumes the current attempt. **PLAY ALL 10** returns to the normal sequence with a fresh session.
 
 For **Win the Ball**, hold anywhere on the pitch to chase the red opponent. Keep watching the ball: release your finger or mouse button when its ring turns green and says **RELEASE!**. Early or late release misses; holding through every opportunity or starting too late lets the opponent escape. Retries rotate through side, diagonal, and chase approaches with different dribble rhythms. Cancelled gestures stop pursuit safely without tackling. The highlight ends at the result screen, without a counterattack.
 

@@ -12,7 +12,9 @@
       const game = this.game;
       if (game.pendingResult || [State.RESULT, State.SESSION_SUMMARY].includes(game.state)) return;
       const descriptor = this.descriptor(kind), success = descriptor.success;
-      game.outcomes[game.index] = success;
+      const match = game.session.match;
+      if (match) match.record(kind, success);
+      else game.outcomes[game.index] = success;
       game.resolution = { kind, elapsed: 0, netHit: false, landing: null, crossing: { x: game.ball.x, y: game.ball.y, z: game.ball.z } };
       const chip = success && game.flight?.clearedKeeper;
       game.stats[descriptor.stat]++;
@@ -22,7 +24,7 @@
       game.banner = { ...value(descriptor.banner, chip) };
       const explanation = descriptor.detail === undefined ? (success ? defaults.attack.goal.detail(chip) : detail) : value(descriptor.detail, chip);
       game.ui.showResult({ title: value(descriptor.title, chip), symbol: success ? '↗' : descriptor.symbol || '↘', success,
-        number: game.index + 1, total: this.definitions.length, detail: game.defense ? detail : explanation, practice: game.practiceIndex !== null });
+        number: game.index + 1, total: this.definitions.length, detail: match?.needsSave ? 'The opponent is through! Continue to control your keeper.' : game.defense ? detail : explanation, continuation: match?.needsSave, numberLabel: match ? `${match.cursor + 1}/6${match.continuation ? ' · KEEPER' : ''}` : null, practice: game.practiceIndex !== null });
       game.pendingResult = { kind, wait: game.defense ? 1.3 : descriptor.delay };
       game.aim = null; game.updateUI(); game.updateFlightUI();
     }

@@ -252,7 +252,7 @@ test('a teammate can receive a kick in a long-shot highlight without an action s
   assert.notEqual(g.controlled, g.player);
 });
 
-test('a missed contact window and the complete eight-highlight session resolve without freezing', () => {
+test('a missed contact window and the complete ten-highlight session resolve without freezing', () => {
   const { game: g } = fixture();
   for (let index = 0; index < 5; index++) {
     start(g, index);
@@ -278,6 +278,8 @@ test('a missed contact window and the complete eight-highlight session resolve w
   until(g, () => g.state === 'RESULT');
   assert.equal(g.stats.misses + g.stats.goals + g.stats.tackles, 7);
   g.nextHighlight(); g.update(.9); until(g, () => g.state === 'RESULT'); g.nextHighlight();
+  g.update(.9); until(g, () => g.state === 'RESULT'); g.nextHighlight();
+  g.update(.9); kick(g, { x: 420 }); until(g, () => g.state === 'RESULT'); g.nextHighlight();
   assert.equal(g.state, 'SESSION_SUMMARY');
 });
 
@@ -511,7 +513,7 @@ function releaseTackle(g, id = 17) { g.onPointerUp(defensePointer(g, { x: 800, y
 
 test('Win the Ball starts sixth and holding anywhere follows the moving opponent', () => {
   const { game: g, elements } = fixture(); start(g, 5);
-  assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('chapter-number').textContent, '6/8');
+  assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('chapter-number').textContent, '6/10');
   const original = { ...g.player }, redX = g.defense.opponent.x;
   holdChase(g); assert.equal(g.defense.phase, 'running'); assert.ok(g.pointer);
   g.update(.5);
@@ -532,8 +534,8 @@ test('releasing on green wins immediately, transfers possession once and contrib
   assert.ok(Math.hypot(g.ball.x - g.player.x, g.ball.y - g.player.y) < 30);
   assert.ok(Math.hypot(g.ball.x - g.defense.opponent.x, g.ball.y - g.defense.opponent.y) > 20);
   g.nextHighlight(); g.update(.9); until(g, () => g.state === 'RESULT');
-  g.nextHighlight(); g.update(.9); until(g, () => g.state === 'RESULT'); g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
-  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 11);
+  g.nextHighlight(); g.update(.9); until(g, () => g.state === 'RESULT'); g.nextHighlight(); finishAddedHighlights(g); assert.equal(g.state, 'SESSION_SUMMARY');
+  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 8);
 });
 
 test('early release and release after green are missed tackles', () => {
@@ -629,17 +631,17 @@ test('moving the held finger and secondary pointers cannot tackle or steer', () 
   assert.equal(g.resolution.kind, 'ball_won');
 });
 
-test('all eight highlights can be opened directly as independent practice attempts', () => {
+test('all ten highlights can be opened directly as independent practice attempts', () => {
   const { game: g, elements } = fixture();
-  for (let index = 0; index < 8; index++) {
+  for (let index = 0; index < 10; index++) {
     g.stats.goals = 3; g.outcomes[0] = true;
     g.openHighlightPicker(); g.startPractice(index);
     assert.equal(elements.get('highlight-dialog').open, false);
     assert.equal(g.practiceIndex, index); assert.equal(g.index, index);
     assert.equal(g.stats.goals, 0); assert.equal(g.outcomes.length, 0);
     g.update(.9);
-    assert.equal(g.state, index >= 5 ? 'DEFENDING' : index === 4 ? 'INTERCEPTION' : 'AIMING');
-    assert.equal(elements.get('chapter-number').textContent, `${index + 1}/8`);
+    assert.equal(g.state, index >= 5 && index <= 8 ? 'DEFENDING' : index === 4 ? 'INTERCEPTION' : 'AIMING');
+    assert.equal(elements.get('chapter-number').textContent, `${index + 1}/10`);
   }
 });
 
@@ -664,7 +666,7 @@ test('closing the selection menu resumes the same encounter without changing its
   assert.equal(g.practiceIndex, null);
 });
 
-test('play all exits practice and restores normal eight-highlight progression', () => {
+test('play all exits practice and restores normal ten-highlight progression', () => {
   const { game: g } = fixture(); g.startPractice(5); g.update(.9);
   g.stats.tackles = 1; g.beginSession(); g.update(.9);
   assert.equal(g.practiceIndex, null); assert.equal(g.index, 0); assert.equal(g.defense, null);
@@ -675,7 +677,7 @@ test('play all exits practice and restores normal eight-highlight progression', 
 
 test('invalid direct selections leave the current highlight untouched', () => {
   const { game: g } = fixture(); start(g);
-  for (const value of [-1, 8, NaN, 1.5, '5', null]) g.startPractice(value);
+  for (const value of [-1, 10, NaN, 1.5, '5', null]) g.startPractice(value);
   assert.equal(g.index, 0); assert.equal(g.practiceIndex, null); assert.equal(g.state, 'AIMING');
 });
 
@@ -775,7 +777,7 @@ function choosePassPosition(g, point) {
 
 test('Cut the Pass opens seventh with two red players and tap-to-move input', () => {
   const { game: g, elements } = fixture(); start(g, 6);
-  assert.equal(elements.get('chapter-number').textContent, '7/8');
+  assert.equal(elements.get('chapter-number').textContent, '7/10');
   assert.equal(g.state, 'DEFENDING'); assert.equal(g.defenders.length, 2);
   const original = { ...g.player }, receiverY = g.defense.receiver.y;
   choosePassPosition(g, { x: 550, y: 410 }); assert.equal(g.pointer, null);
@@ -792,8 +794,8 @@ test('a real interception awards one ball win, transfers possession and reaches 
   g.finish('pass_won'); assert.equal(g.stats.tackles, 1);
   until(g, () => g.state === 'RESULT');
   assert.ok(Math.hypot(g.ball.x - g.possessionPosition(g.player).x, g.ball.y - g.possessionPosition(g.player).y) < 1);
-  g.nextHighlight(); g.update(.9); until(g, () => g.state === 'RESULT'); g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
-  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 11);
+  g.nextHighlight(); g.update(.9); until(g, () => g.state === 'RESULT'); g.nextHighlight(); finishAddedHighlights(g); assert.equal(g.state, 'SESSION_SUMMARY');
+  assert.equal(elements.get('total-tackles').textContent, 1); assert.equal(elements.get('rating').textContent, 8);
 });
 
 test('no input, wrong positioning and late movement let the receiver collect the pass', () => {
@@ -843,17 +845,17 @@ test('a startup registration updates the menu, progress and full-series/practice
   const { game: g, elements } = fixture(1000, 740, namespace => {
     namespace.Highlights.register({ ...namespace.Highlights.get('one-on-one'), id: 'test-extra', title: 'Test extra', keeperEligible: false });
   });
-  assert.match(elements.get('play-button').innerHTML, /PLAY ALL 9/);
-  assert.match(elements.get('play-all-button').innerHTML, /PLAY ALL 9/);
-  assert.equal((elements.get('chapter-progress').innerHTML.match(/<i>/g) || []).length, 9);
-  assert.equal((elements.get('highlight-list').innerHTML.match(/data-highlight=/g) || []).length, 9);
-  g.startPractice(8); g.update(.9);
-  assert.equal(g.state, 'AIMING'); assert.equal(elements.get('chapter-number').textContent, '9/9');
+  assert.match(elements.get('play-button').innerHTML, /PLAY ALL 11/);
+  assert.match(elements.get('play-all-button').innerHTML, /PLAY ALL 11/);
+  assert.equal((elements.get('chapter-progress').innerHTML.match(/<i>/g) || []).length, 11);
+  assert.equal((elements.get('highlight-list').innerHTML.match(/data-highlight=/g) || []).length, 11);
+  g.startPractice(10); g.update(.9);
+  assert.equal(g.state, 'AIMING'); assert.equal(elements.get('chapter-number').textContent, '11/11');
   kick(g, { x: 420 }); until(g, () => g.state === 'RESULT');
-  g.nextHighlight(); g.update(.9); assert.equal(g.index, 8); assert.equal(g.state, 'AIMING');
-  g.beginSession(); g.index = 7; g.beginHighlight(); g.update(.9);
-  until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
-  assert.equal(g.index, 8); assert.equal(g.state, 'AIMING');
+  g.nextHighlight(); g.update(.9); assert.equal(g.index, 10); assert.equal(g.state, 'AIMING');
+  g.beginSession(); g.index = 9; g.beginHighlight(); g.update(.9);
+  kick(g, { x: 800 }); until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
+  assert.equal(g.index, 10); assert.equal(g.state, 'AIMING');
   kick(g, { x: 420 }); until(g, () => g.state === 'RESULT'); g.nextHighlight();
   assert.equal(g.state, 'SESSION_SUMMARY');
 });
@@ -898,7 +900,7 @@ test('registered outcome descriptors resolve once, keep banner templates intact 
     descriptor = { ...base, title: 'TEST WIN', detail: 'TEST DETAIL', flight: 'TEST FLIGHT', banner: { ...base.banner, text: 'TEST WIN' } };
     namespace.Highlights.register({ ...namespace.Highlights.get('one-on-one'), id: 'test-result', title: 'Test result', keeperEligible: false, outcomes: { custom: descriptor } });
   });
-  g.startPractice(8); g.update(.9); g.finish('custom', 'Custom detail');
+  g.startPractice(10); g.update(.9); g.finish('custom', 'Custom detail');
   assert.equal(g.stats.tackles, 1); assert.equal(g.stats.goals, 0); assert.equal(g.stats.misses, 0);
   assert.equal(elements.get('result-title').textContent, 'TEST WIN');
   assert.equal(elements.get('result-detail').textContent, 'TEST DETAIL');
@@ -906,7 +908,7 @@ test('registered outcome descriptors resolve once, keep banner templates intact 
   assert.equal(g.pendingResult.wait, 2.1); g.finish('custom'); assert.equal(g.stats.tackles, 1);
   g.update(.2); assert.ok(g.banner.time < descriptor.banner.time); assert.equal(descriptor.banner.time, 1.4);
   until(g, () => g.state === 'RESULT'); g.finish('custom'); assert.equal(g.stats.tackles, 1);
-  g.nextHighlight(); g.update(.9); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[8], undefined);
+  g.nextHighlight(); g.update(.9); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[10], undefined);
 });
 
 test('controller contexts expose actor references and services but no host, DOM or statistics', () => {
@@ -954,13 +956,13 @@ test('a test-only controller registration handles input, cancellation, completio
       }; }
     });
   });
-  g.startPractice(8); g.update(.9); assert.equal(g.state, 'DEFENDING');
+  g.startPractice(10); g.update(.9); assert.equal(g.state, 'DEFENDING');
   const e = defensePointer(g, g.player);
   g.onPointerDown(e); assert.equal(g.pointer.id, e.pointerId); g.cancelPointer(e.pointerId);
   assert.equal(g.pointer, null); assert.equal(g.pendingResult, null);
   g.onPointerDown(e); g.onPointerUp(e); assert.equal(g.resolution.kind, 'pass_won'); assert.equal(g.stats.tackles, 1);
   until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
-  assert.equal(g.index, 8); assert.equal(g.stats.tackles, 0); assert.ok(events.includes('cancel')); assert.ok(events.includes('disposed'));
+  assert.equal(g.index, 10); assert.equal(g.stats.tackles, 0); assert.ok(events.includes('cancel')); assert.ok(events.includes('disposed'));
 });
 
 test('viewport aliases preserve mapping and DPR while only changed geometry cancels a captured pointer', () => {
@@ -1036,7 +1038,7 @@ test('native transport keeps idle highlights inert and uses the released drag po
 });
 
 test('the live renderer bridge preserves facade references and rendering never advances any highlight', () => {
-  for (let index = 0; index < 8; index++) {
+  for (let index = 0; index < 10; index++) {
     const { game: g } = fixture(); start(g, index);
     if (index === 5) { g.defense.beginHold(); g.update(.8); }
     if (index === 6) { g.defense.selectTarget({ x: 550, y: 410 }); g.update(.4); }
@@ -1079,21 +1081,21 @@ test('a standalone registration after class loading enters, resolves both ways a
       }
     });
   });
-  assert.equal(g.definitions.length, 9); assert.equal(g.session.definitions, g.definitions);
-  assert.match(elements.get('play-button').innerHTML, /PLAY ALL 9/);
+  assert.equal(g.definitions.length, 11); assert.equal(g.session.definitions, g.definitions);
+  assert.match(elements.get('play-button').innerHTML, /PLAY ALL 11/);
   assert.equal(g.highlightAdapter, undefined);
-  g.startPractice(8); g.update(.9); g.update(.01);
+  g.startPractice(10); g.update(.9); g.update(.01);
   assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('bottom-hint').textContent, 'Test input');
   const win = defensePointer(g, { x: 480, y: 400 }); g.onPointerDown(win); g.onPointerUp(win);
   assert.equal(g.pointer, null); assert.equal(g.stats.tackles, 1); assert.equal(g.stats.misses, 0);
   assert.equal(elements.get('result-title').textContent, 'TEST WON!'); until(g, () => g.state === 'RESULT');
   assert.match(elements.get('next-button').innerHTML, /RETRY/); g.nextHighlight(); g.update(.9);
-  assert.equal(contexts.length, 2); assert.equal(disposed, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[8], undefined);
+  assert.equal(contexts.length, 2); assert.equal(disposed, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[10], undefined);
   contexts[0].complete('test_won', 'Old attempt'); assert.equal(g.pendingResult, null); assert.equal(g.stats.tackles, 0);
   const lose = defensePointer(g, { x: 600, y: 400 }); g.onPointerDown(lose); g.onPointerUp(lose);
-  assert.equal(g.stats.misses, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[8], false);
+  assert.equal(g.stats.misses, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[10], false);
   assert.equal(elements.get('result-title').textContent, 'TEST LOST!'); until(g, () => g.state === 'RESULT');
-  g.nextHighlight(); g.update(.9); assert.equal(g.index, 8); assert.equal(g.stats.misses, 0); assert.equal(contexts.length, 3);
+  g.nextHighlight(); g.update(.9); assert.equal(g.index, 10); assert.equal(g.stats.misses, 0); assert.equal(contexts.length, 3);
   g.destroy(); assert.equal(disposed, 3);
 });
 
@@ -1151,6 +1153,105 @@ test('penalty practice retry restores saves and final summary includes a saved p
   previous.complete('penalty_saved'); assert.equal(g.stats.saves, 0);
   g.beginSession(); g.session.memoryFor('save-the-penalty').variant = 2; g.index = 7; g.beginHighlight(); g.update(.9);
   until(g, () => g.state === 'RESULT'); assert.equal(g.stats.saves, 1); g.nextHighlight();
-  assert.equal(g.state, 'SESSION_SUMMARY'); assert.equal(elements.get('total-saves').textContent, 1);
-  assert.equal(elements.get('rating').textContent, 11);
+  finishAddedHighlights(g); assert.equal(g.state, 'SESSION_SUMMARY'); assert.equal(elements.get('total-saves').textContent, 1);
+  assert.equal(elements.get('rating').textContent, 8);
+});
+
+function finishAddedHighlights(g) {
+  while (g.index >= 8 && g.state !== 'SESSION_SUMMARY') {
+    g.update(.9);
+    if (g.index === 9) kick(g, { x: 800 });
+    until(g, () => g.state === 'RESULT'); g.nextHighlight();
+  }
+}
+
+test('open-play saves use real flight and native controller input at 30/60/120 FPS', () => {
+  for (const fps of [30, 60, 120]) for (const save of [true, false]) {
+    const { game: g } = fixture(); g.startPractice(8); g.update(.9);
+    let attempted = false;
+    for (let i = 0; i < fps * 10 && g.state !== 'RESULT'; i++) {
+      if (save && !attempted && g.controller.phase === 'flight' && g.ball.age >= .04) {
+        attempted = true;
+        const p = { x: 500, y: 240 }, end = { x: 400, y: 240 };
+        g.onPointerDown(defensePointer(g, p)); g.onPointerMove(defensePointer(g, end)); g.onPointerUp(defensePointer(g, end));
+      }
+      g.update(1 / fps);
+    }
+    assert.equal(g.resolution.kind, save ? 'shot_saved' : 'shot_conceded');
+    assert.equal(g.stats.saves, save ? 1 : 0); assert.equal(g.stats.goals, 0);
+  }
+});
+
+test('taking a penalty supports physical goals, misses and independent practice retry', () => {
+  for (const [target, kind] of [[420, 'goal'], [800, 'wide']]) {
+    const { game: g } = fixture(); g.startPractice(9); g.update(.9);
+    assert.equal(g.mates.length, 0); assert.equal(g.defenders.length, 0); assert.equal(g.keeper.profile, 'line');
+    kick(g, { x: target }); until(g, () => g.state === 'RESULT');
+    assert.equal(g.resolution.kind, kind); g.nextHighlight();
+    assert.equal(g.index, 9); assert.equal(g.stats.goals, 0);
+  }
+});
+
+test('match lifecycle handles bounded continuations, stale completion, single attempts and replay', () => {
+  const { game: g, elements } = fixture(); g.startMatch(() => .9);
+  assert.equal(elements.get('score').textContent, 0); assert.equal(elements.get('opponent-score').textContent, 0);
+  let scenes = 0;
+  while (g.state !== 'SESSION_SUMMARY') {
+    g.update(.9); const previous = g.controller.context, controller = g.controller;
+    g.restart(); assert.equal(g.controller, controller);
+    if (g.definitions[g.index].category === 'attack') {
+      if (g.state === 'INTERCEPTION') { g.interceptTarget = { x: 500, y: 320 }; until(g, () => g.state === 'AIMING'); }
+      kick(g, { x: 800 });
+    }
+    until(g, () => g.state === 'RESULT');
+    const before = JSON.stringify(g.session.match.score);
+    previous.complete('goal'); assert.equal(JSON.stringify(g.session.match.score), before);
+    if (g.session.match.needsSave) assert.equal(elements.get('next-button').innerHTML.includes('SAVE THE SHOT'), true);
+    scenes++; g.nextHighlight();
+    previous.complete('goal'); assert.equal(JSON.stringify(g.session.match.score), before);
+  }
+  assert.equal(scenes, 8); assert.equal(g.session.match.history.length, 8);
+  assert.equal(elements.get('summary-title').textContent, 'DEFEAT');
+  g.startSession(); assert.equal(g.session.match.history.length, 0); assert.equal(g.session.match.score.away, 0);
+  g.startPractice(8); assert.equal(g.session.match, null); g.beginSession(); assert.equal(g.practiceIndex, null);
+});
+
+test('match results show victory or draw and both penalty replacements use the normal controllers', () => {
+  for (const homeGoal of [false, true]) {
+    const { game: g, elements } = fixture(); g.startMatch(() => .9);
+    while (g.state !== 'SESSION_SUMMARY') {
+      g.update(.9);
+      const id = g.definitions[g.index].id;
+      g.controller.context.complete(id === 'win-the-ball' ? 'ball_won' : id === 'cut-the-pass' ? 'pass_won' : id === 'save-the-shot' ? 'shot_saved' : homeGoal ? 'goal' : 'wide');
+      until(g, () => g.state === 'RESULT'); g.nextHighlight();
+    }
+    assert.equal(elements.get('summary-title').textContent, homeGoal ? 'VICTORY' : 'DRAW');
+    assert.equal(g.session.match.history.length, 6);
+    assert.equal(g.session.match.score.home, homeGoal ? 3 : 0); assert.equal(g.session.match.score.away, 0);
+  }
+  for (const home of [false, true]) {
+    const values = [.9, .9, .9, .9, .1, home ? .1 : .9, 0]; let i = 0;
+    const { game: g } = fixture(); g.startMatch(() => values[i++] ?? .9);
+    const match = g.session.match;
+    if (!home) { match.cursor = 5; g.session.index = g.definitions.findIndex(d => d.id === match.highlightId); g.beginHighlight(); }
+    g.update(.9);
+    assert.equal(g.definitions[g.index].id, home ? 'take-the-penalty' : 'save-the-penalty');
+    assert.equal(g.state, home ? 'AIMING' : 'DEFENDING');
+  }
+});
+
+test('open-play high shots and central shots can be saved with visible height and timing', () => {
+  for (const fps of [30, 60, 120]) for (const variant of [1, 2, 3, 4]) {
+    const { game: g } = fixture(); g.session.memoryFor('save-the-shot').variant = variant; g.startPractice(8); g.update(.9);
+    let attempted = false;
+    for (let i = 0; i < fps * 10 && g.state !== 'RESULT'; i++) {
+      const c = g.controller;
+      if (variant !== 2 && !attempted && c.phase === 'flight' && g.ball.age >= (c.shot.z > 30 ? .18 : .04)) {
+        attempted = true; const p = { x: 500, y: 240 }, end = { x: 500 + Math.sign(c.shot.x - 500) * 100, y: c.shot.z > 30 ? 140 : 240 };
+        g.onPointerDown(defensePointer(g, p)); g.onPointerMove(defensePointer(g, end)); g.onPointerUp(defensePointer(g, end));
+      }
+      g.update(1 / fps);
+    }
+    assert.equal(g.resolution.kind, 'shot_saved', `shot ${variant} at ${fps} FPS`);
+  }
 });

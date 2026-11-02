@@ -29,14 +29,14 @@ outcome=await kick(379,425,.6);assert('Native return pass',outcome.state==='AIMI
 await kick(580,84,1);await tap(await center('next-button'));await wait(950);
 await tap(await world(500,320));outcome=await fastForward();assert('Native off-ball receive',outcome.state==='AIMING'&&outcome.stats.receives===1,outcome);
 await kick(420,84,1);await tap(await center('next-button'));await wait(950);
-assert('Sixth highlight starts defense',await evaluate("footballGame.state==='DEFENDING'&&document.getElementById('chapter-number').textContent==='6/8'"));
+assert('Sixth highlight starts defense',await evaluate("footballGame.state==='DEFENDING'&&document.getElementById('chapter-number').textContent==='6/10'"));
 await touch('touchStart',{x:100,y:650});
 let green=false;for(let i=0;i<350;i++){if(await evaluate('footballGame.defense.timing().ready')){green=true;break;}await wait(20);}
 assert('Held chase reaches a green release opportunity',green);
 await touch('touchEnd');await wait(1500);
 assert('Native defensive tackle wins the ball',await evaluate("footballGame.state==='RESULT'&&footballGame.resolution.kind==='ball_won'&&footballGame.stats.tackles===1"));
 await tap(await center('next-button'));await wait(950);
-assert('Seventh highlight starts pass interception',await evaluate("footballGame.index===6&&footballGame.state==='DEFENDING'&&document.getElementById('chapter-number').textContent==='7/8'"));
+assert('Seventh highlight starts pass interception',await evaluate("footballGame.index===6&&footballGame.state==='DEFENDING'&&document.getElementById('chapter-number').textContent==='7/10'"));
 await tap(await world(550,410));
 for(let i=0;i<350;i++){if(await evaluate("footballGame.state==='RESULT'"))break;await wait(20);}
 assert('Native pass interception wins second defensive ball',await evaluate("footballGame.resolution.kind==='pass_won'&&footballGame.stats.tackles===2"));
@@ -48,6 +48,13 @@ assert('Penalty swipe commits before release',await evaluate("footballGame.contr
 await touch('touchEnd');await wait(180);await screen('mobile-penalty-flight');
 for(let i=0;i<250;i++){if(await evaluate("footballGame.state==='RESULT'"))break;await wait(20);}
 assert('Native penalty save awarded separately',await evaluate("footballGame.resolution.kind==='penalty_saved'&&footballGame.stats.saves===1&&footballGame.stats.tackles===2"));
+await tap(await center('next-button'));await wait(950);
+assert('Ninth highlight controls keeper in open play',await evaluate("footballGame.index===8&&footballGame.controlled===footballGame.keeper"));
+for(let i=0;i<350;i++){if(await evaluate("footballGame.state==='RESULT'"))break;await wait(20);}
+assert('Open-play shot resolves physically',await evaluate("['shot_saved','shot_conceded'].includes(footballGame.resolution.kind)"));
+await tap(await center('next-button'));await wait(950);
+assert('Tenth highlight takes a penalty',await evaluate("footballGame.index===9&&footballGame.state==='AIMING'"));
+await kick(420,84,1);
 await tap(await center('next-button'));assert('Native session reaches summary',await evaluate("footballGame.state==='SESSION_SUMMARY'"));await screen('mobile-new-summary');
 for(const [w,h] of [[320,480],[568,320],[844,390]]){await size(w,h,true);await wait(120);assert('Summary replay visible '+w+'x'+h,await evaluate("(()=>{const r=document.getElementById('again-button').getBoundingClientRect();return r.y>=0&&r.bottom<=innerHeight&&r.x>=0&&r.right<=innerWidth})()"));}
 await tap(await center('again-button'));await wait(950);assert('Native replay resets session',await evaluate("footballGame.index===0&&footballGame.stats.goals===0&&footballGame.stats.passes===0&&footballGame.state==='AIMING'"));

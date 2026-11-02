@@ -209,3 +209,13 @@ button.chance-indicator:hover { border-color: #c6e9a47a; }
 .highlight-dialog > .primary-button { display: flex; width: 100%; }
 @media (max-width: 600px) { .highlight-options { gap: 8px; margin: 18px 0; } .highlight-option { gap: 8px; padding: 12px 9px; } .highlight-option strong { font-size: 12px; } }
 @media (max-height: 500px) { .result-content > .secondary-button, .summary-content > .secondary-button { grid-column: 1 / -1; margin: 4px auto 0; min-height: 36px; padding: 8px 12px; } .title-content .secondary-button { min-height: 36px; padding: 8px 12px; margin-top: -4px; } }
+
+#match-score { margin: 12px 0; color: var(--mint); font-size: clamp(26px, 6vw, 48px); font-weight: 900; }
+.result-content #result-detail:not(.sr-only) { max-width: 320px; margin: 8px auto 16px; color: #dce8d4; font-size: 14px; }
+@media (max-height: 500px) {
+  .title-content { gap: 10px; }
+  .title-content .title-ball { display: none; }
+  .title-content h1 { font-size: 32px; }
+  #match-score { margin: 0; font-size: 26px; }
+  .result-content #result-detail:not(.sr-only) { grid-column: 1 / -1; margin: 0 auto 6px; }
+}

@@ -252,3 +252,9 @@ During initial development, core gameplay and session flow were checked in Chrom
 The mobile layout update was additionally checked with emulated touch across 12 portrait and landscape viewports, including 320 × 480 and 568 × 320. Validation covered viewport fit, touch-sized contact geometry, device rotation during a drag, receiving and returning passes, a complete five-highlight session, summary/replay visibility, and the desktop mouse flow.
 
 These checks do not constitute physical-device coverage or validation of every browser. Record the browsers, devices, viewport sizes, and checks used for each subsequent change in its pull request.
+
+## Match Mode checks
+
+Run `node tests/browser/match.mjs` against a dedicated Chrome debugging instance (or set `GAME_URL` to the locally served subdirectory URL). It checks native match entry/replay, an eight-scene match through real simulation, open-play saves and penalty goals with native mouse/touch, and returning to Play All on desktop, portrait and short landscape. New headless coverage verifies six/eight-scene progression, both penalty replacements, score isolation, duplicate/stale completion, single attempts and practice compatibility.
+
+In this managed environment, Chromium policy blocks direct `file://` navigation; browser validation uses HTTP under `/ShoparFootball/`. This limits the browser verification, not the classic-script offline loading design.

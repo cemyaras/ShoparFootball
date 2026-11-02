@@ -5,7 +5,7 @@
   const freshStats = () => ({ goals: 0, passes: 0, misses: 0, receives: 0, tackles: 0, saves: 0 });
   class Session {
     constructor(definitions) {
-      this.highlightMemory = new Map();
+      this.highlightMemory = new Map(); this.match = null;
       this.definitions = definitions; this.index = 0; this.practiceIndex = null;
       this.stats = freshStats(); this.outcomes = [];
       this.keeperPlan = Array(definitions.length).fill('line');
@@ -15,14 +15,24 @@
       return this.highlightMemory.get(id);
     }
     begin(practiceIndex, makeKeeperPlan) {
-      this.practiceIndex = practiceIndex;
+      this.match = null; this.practiceIndex = practiceIndex;
       this.keeperPlan = makeKeeperPlan();
       this.stats = freshStats(); this.outcomes = []; this.index = practiceIndex ?? 0;
+    }
+    beginMatch(makeKeeperPlan, random = Math.random) {
+      this.begin(null, makeKeeperPlan);
+      this.match = new window.ShoparFootball.MatchSession(random);
+      this.index = this.definitions.findIndex(entry => entry.id === this.match.highlightId);
     }
     recordReception(offBall) { if (offBall) this.stats.receives++; else this.stats.passes++; }
     captureCheckpoint() { this.scenarioSnapshot = { ...this.stats }; }
     restoreCheckpoint() { this.stats = { ...this.scenarioSnapshot }; this.outcomes[this.index] = undefined; }
     advance() {
+      if (this.match) {
+        const action = this.match.advance();
+        if (action === 'next') this.index = this.definitions.findIndex(entry => entry.id === this.match.highlightId);
+        return action;
+      }
       if (this.practiceIndex !== null) return 'retry';
       if (this.index === this.definitions.length - 1) return 'summary';
       this.index++; return 'next';

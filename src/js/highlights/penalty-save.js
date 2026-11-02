@@ -8,12 +8,16 @@
     { x: 576, z: 6, duration: .24 }
   ];
   class PenaltySaveController extends window.ShoparFootball.Controllers.HighlightController {
-    constructor(context) {
+    constructor(context, openPlay = false) {
       super(context);
+      this.openPlay = openPlay; this.savedKind = openPlay ? 'shot_saved' : 'penalty_saved';
+      this.concededKind = openPlay ? 'shot_conceded' : 'penalty_conceded';
       const variant = context.memory.variant ?? 0;
       context.memory.variant = variant + 1;
-      this.shot = SHOTS[variant % SHOTS.length];
+      this.shot = { ...SHOTS[variant % SHOTS.length] };
+      if (openPlay) this.shot.duration += .16;
       this.shooter = context.defenders[0];
+      if (openPlay) this.shooter.x = [440, 500, 560][variant % 3];
       this.elapsed = 0; this.phase = 'runup'; this.dive = null; this.finished = false;
       this.height = 0; this.angle = 0; this.hands = [{ x: -12, y: -12 }, { x: 12, y: -12 }];
       Object.assign(context.keeper, { x: 500, y: 100, dive: 0 });
@@ -23,9 +27,9 @@
     carry() { Object.assign(this.context.ball, this.context.geometry.possessionPosition(this.shooter), { z: 0, vx: 0, vy: 0, vz: 0, spin: 0 }); }
     enter() { return { state: State.DEFENDING, toast: 'Swipe to dive · diagonally for high shots', duration: 2.4 }; }
     getPresentation() {
-      return { ballHeld: this.finished && this.context.resolution?.kind === 'penalty_saved', ballInNet: this.finished && this.context.resolution?.kind === 'penalty_conceded', hideHelp: true, hint: this.finished ? '' : this.dive ? 'Watch the gloves' : 'Swipe to dive · stay for the middle',
-        ariaLabel: 'Save the Penalty. Swipe anywhere toward the shot. Swipe upward diagonally for a high save. Stay still for a central shot.',
-        camera: { bounds: { left: 335, top: -35, width: 330, height: 370 }, maxScale: 2.1 } };
+      return { ballHeld: this.finished && this.context.resolution?.kind === this.savedKind, ballInNet: this.finished && this.context.resolution?.kind === this.concededKind, hideHelp: true, hint: this.finished ? '' : this.dive ? 'Watch the gloves' : 'Swipe to dive · stay for the middle',
+        ariaLabel: (this.openPlay ? 'Save the Shot.' : 'Save the Penalty.') + ' Swipe anywhere toward the shot. Swipe upward diagonally for a high save. Stay still for a central shot.',
+        camera: this.openPlay ? { bounds: { left: 270, top: -35, width: 460, height: 490 }, maxScale: 1.7 } : { bounds: { left: 335, top: -35, width: 330, height: 370 }, maxScale: 2.1 } };
     }
     getActorPose(actor) {
       if (actor === this.context.player) return { hidden: true };
@@ -89,7 +93,7 @@
     }
     resolve(kind) {
       this.finished = true; this.phase = 'resolved';
-      this.context.complete(kind, kind === 'penalty_saved' ? 'Your keeper reached the ball before it crossed the line.' : 'The ball beat your reach. Read the last step and time your dive.');
+      this.context.complete(kind, kind === this.savedKind ? 'Your keeper reached the ball before it crossed the line.' : 'The ball beat your reach. Read the last step and time your dive.');
     }
     update(dt) {
       const scaled = dt * .4, steps = Math.max(1, Math.ceil(scaled * 240)), step = scaled / steps;
@@ -98,7 +102,7 @@
         const b = this.context.ball, previous = { ...b }, gloves = this.glovePoints();
         this.moveKeeper(step);
         if (this.phase === 'runup') {
-          this.context.physics.movePlayer(this.shooter, 500, 228, 28, step);
+          this.context.physics.movePlayer(this.shooter, 500, this.openPlay ? 295 : 228, this.openPlay ? 85 : 28, step);
           this.carry();
           if (this.elapsed >= .8) this.launch();
         } else {
@@ -109,10 +113,10 @@
             b.x = lerp(previous.x, b.x, fraction); b.z = lerp(previous.z, b.z, fraction); b.y = FIELD.top;
           }
           if (this.touches(previous, gloves)) {
-            b.vx = b.vy = b.vz = 0; this.resolve('penalty_saved');
+            b.vx = b.vy = b.vz = 0; this.resolve(this.savedKind);
           } else if (crossed) {
             b.y = FIELD.top - .01;
-            this.resolve('penalty_conceded');
+            this.resolve(this.concededKind);
           }
           this.context.effects.trail.push({ x: b.x, y: b.y, z: b.z, age: 0 });
           if (this.context.effects.trail.length > 50) this.context.effects.trail.shift();
@@ -123,7 +127,7 @@
     updateResult(dt, resolution) {
       resolution.elapsed += dt;
       const b = this.context.ball;
-      if (resolution.kind === 'penalty_saved') {
+      if (resolution.kind === this.savedKind) {
         const glove = this.glovePoints()[0], blend = 1 - Math.exp(-dt * 15);
         b.x = lerp(b.x, glove.x, blend); b.y = lerp(b.y, this.context.keeper.y, blend);
         b.z = lerp(b.z, (this.context.keeper.y - glove.y) / HEIGHT_PROJECTION, blend);

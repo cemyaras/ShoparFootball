@@ -7,7 +7,8 @@
     constructor(game, definitions) { this.game = game; this.definitions = definitions; this.canvas = $('game'); this.canvasWrap = $('canvas-wrap'); }
     bindEvents() {
       const game = this.game;
-      game.listen($('play-button'), 'click', () => game.startSession());
+      game.listen($('match-button'), 'click', () => game.startMatch());
+      game.listen($('play-button'), 'click', () => game.beginSession());
       game.listen($('again-button'), 'click', () => game.startSession());
       game.listen($('next-button'), 'click', () => game.nextHighlight());
       for (const id of ['highlight-button', 'select-highlight-button', 'result-select-button', 'summary-select-button']) game.listen($(id), 'click', () => game.openHighlightPicker());
@@ -71,15 +72,24 @@
       $('result-title').textContent = model.title;
       $('result-symbol').textContent = model.symbol;
       $('result-symbol').style.color = model.success ? 'var(--mint)' : '#f4ae8f';
-      $('result-kicker').textContent = `${model.number}/${model.total}`;
+      $('result-kicker').textContent = model.numberLabel || `${model.number}/${model.total}`;
+      $('result-detail').classList.toggle('sr-only', !this.game.session.match);
       $('result-detail').textContent = model.detail;
-      $('next-button').innerHTML = model.practice ? 'RETRY <span>↻</span>' : 'NEXT <span>→</span>';
+      $('next-button').innerHTML = model.practice ? 'RETRY <span>↻</span>' : model.continuation ? 'CONTINUE · SAVE THE SHOT <span>→</span>' : 'NEXT <span>→</span>';
     }
     showSummary(score, stats) {
       $('rating').textContent = score; $('total-goals').textContent = stats.goals; $('total-passes').textContent = stats.passes; $('total-misses').textContent = stats.misses;
       $('total-tackles').textContent = stats.tackles; $('total-saves').textContent = stats.saves || 0;
       $('summary-title').textContent = 'FULL TIME';
-      $('summary-detail').textContent = score >= 75 ? 'Vision, touch, and a little nerve. A performance to remember.' : 'Every chance teaches you something. Go again and find your touch.';
+      const match = this.game.session.match;
+      $('match-score').classList.toggle('hidden', !match);
+      $('rating').parentElement?.classList.toggle('hidden', Boolean(match));
+      if (match) {
+        $('summary-title').textContent = match.result;
+        $('match-score').textContent = `SFC ${match.score.home} – ${match.score.away} ROV`;
+      }
+      $('again-button').innerHTML = match ? 'PLAY ANOTHER MATCH <span>↻</span>' : 'PLAY AGAIN <span>↻</span>';
+      $('summary-detail').textContent = match ? `${match.result}: SFC ${match.score.home}, ROV ${match.score.away}.` : score >= 75 ? 'Vision, touch, and a little nerve. A performance to remember.' : 'Every chance teaches you something. Go again and find your touch.';
     }
     updateConditionsUI() {
       const game = this.game;
@@ -91,13 +101,15 @@
     }
     updateUI() {
       const game = this.game;
-      $('score').textContent = game.stats.goals;
-      $('chapter-number').textContent = `${game.index + 1}/${this.definitions.length}`;
-      $('restart-button').disabled = [State.TITLE, State.SESSION_SUMMARY].includes(game.state);
+      const match = game.session.match;
+      $('score').textContent = match ? match.score.home : game.stats.goals;
+      $('opponent-score').textContent = match ? match.score.away : 0;
+      $('chapter-number').textContent = match ? `${match.cursor + 1}/6${match.continuation ? ' · KEEPER' : ''}` : `${game.index + 1}/${this.definitions.length}`;
+      $('restart-button').disabled = Boolean(match) || [State.TITLE, State.SESSION_SUMMARY].includes(game.state);
       $('help-button').classList.toggle('hidden', Boolean(game.controllerPresentation().hideHelp));
       game.canvas.setAttribute('aria-label', game.controllerPresentation().ariaLabel || 'Football pitch. Drag back from the ball to aim, release, then tap the close-up ball to strike.');
       $('bottom-hint').textContent = game.state === State.INTERCEPTION ? 'Tap the ring to receive.' : game.state === State.AIMING ? 'Drag back to aim. Release, then tap the ball.' : game.state === State.BALL_CONTACT ? 'Tap a point on the ball.' : '';
-      [...$('chapter-progress').children].forEach((el, i) => { el.className = i === game.index ? 'current' : game.outcomes[i] === true ? 'done' : game.outcomes[i] === false ? 'failed' : ''; });
+      [...$('chapter-progress').children].forEach((el, i) => { el.hidden = Boolean(match); el.className = i === game.index ? 'current' : game.outcomes[i] === true ? 'done' : game.outcomes[i] === false ? 'failed' : ''; });
       game.updateFlightUI();
     }
     updatePower(power) {

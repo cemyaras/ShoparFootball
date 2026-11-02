@@ -38,6 +38,7 @@
     penalty_conceded: failure('GOAL CONCEDED!', 'GOAL CONCEDED!', 'READ THE SHOT · TIME THE DIVE', '#ff8b79', 'GOAL CONCEDED!')
   };
   window.ShoparFootball.OutcomeDefinitions = {
+    shot: { shot_saved: { ...penalty.penalty_saved, banner: { ...penalty.penalty_saved.banner, sub: 'SHOT STOPPED' } }, shot_conceded: penalty.penalty_conceded },
     attack, tackle, cutPass, penalty, all: { ...attack, ...tackle, ...cutPass, ...penalty },
     fallback: failure('The chance slips away.', 'CHANCE MISSED!', 'KEEP YOUR HEAD UP', '#f48fb1', undefined)
   };
