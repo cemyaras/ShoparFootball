@@ -21,7 +21,7 @@
       save: { ...outcomes.attack.save, detail: 'The keeper reached your shot. Try a curve toward the far corner.' },
       blocked: { ...outcomes.attack.blocked, detail: 'A defender reached your shot. Draw a path around the defender.' },
       weak: { ...outcomes.attack.weak, detail: 'The ball ran out of pace. Draw a longer path toward goal.' } },
-    intro: 'Draw a path from the ball. Release to shoot.', tip: 'Draw toward goal. Bend your path around the defender.',
+    intro: 'Draw to a height in goal. CHIP adds a lob.', tip: 'Draw from the ball, finish higher for height, or turn CHIP on before drawing a lob.',
     create: context => new window.ShoparFootball.DrawShotController(context)
   });
 })();

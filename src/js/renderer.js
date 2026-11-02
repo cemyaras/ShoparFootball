@@ -36,9 +36,27 @@
       if (this.scene.state === State.AIMING && this.scene.aim?.power > .03) this.drawing.drawAim(c);
       const preview = this.scene.presentation().shotPreview;
       if (preview?.length) {
-        c.save(); c.strokeStyle = '#d0f58d'; c.lineWidth = 3 / v.scale; c.beginPath();
-        preview.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y));
-        c.stroke(); c.restore();
+        const airborne = preview.some(p => p.z > 1);
+        c.save(); c.lineWidth = 2 / v.scale;
+        if (airborne) {
+          c.strokeStyle = '#d0f58d66'; c.setLineDash([5 / v.scale, 5 / v.scale]); c.beginPath();
+          preview.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.stroke(); c.setLineDash([]);
+          for (let i = Math.floor(preview.length / 4); i < preview.length; i += Math.max(1, Math.floor(preview.length / 4))) {
+            const p = preview[i], flightY = p.y - p.z * HEIGHT_PROJECTION;
+            c.strokeStyle = '#d0f58d88'; c.lineWidth = 1 / v.scale;
+            c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x, flightY); c.stroke();
+            c.fillStyle = '#061b10aa'; c.beginPath(); c.ellipse(p.x, p.y, 7 / v.scale, 2.5 / v.scale, 0, 0, Math.PI * 2); c.fill();
+            c.fillStyle = '#f7ffe9'; c.strokeStyle = '#163126'; c.beginPath();
+            c.arc(p.x, flightY, 3.5 / v.scale, 0, Math.PI * 2); c.fill(); c.stroke();
+          }
+        }
+        c.strokeStyle = '#d0f58d'; c.lineWidth = 3 / v.scale; c.beginPath();
+        preview.forEach((p, i) => i ? c.lineTo(p.x, p.y - (p.z || 0) * HEIGHT_PROJECTION) : c.moveTo(p.x, p.y));
+        c.stroke();
+        if (airborne) {
+          const p = preview.at(-1); c.beginPath(); c.arc(p.x, p.y - p.z * HEIGHT_PROJECTION, 4 / v.scale, 0, Math.PI * 2); c.stroke();
+        }
+        c.restore();
       }
       this.drawing.drawTrail(c); this.drawing.drawBallShadow(c, this.scene.ball);
       const actors = [this.scene.player, ...this.scene.mates, ...this.scene.defenders, this.scene.keeper].sort((a, b) => a.y - b.y);

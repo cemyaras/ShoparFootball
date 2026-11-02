@@ -31,6 +31,7 @@
           game.pointer = { id: e.pointerId, start: p, last: p, updateOnRelease: Boolean(reply.updateOnRelease) };
           game.canvas.setPointerCapture(e.pointerId);
         }
+        game.ui.updateControllerControls();
         if (reply.dismissToast !== false) game.toastTime = 0;
       }
     }
@@ -47,12 +48,13 @@
       if (game.pointer.updateOnRelease) game.onPointerMove(e);
       game.releasePointer();
       game.controller?.handleInput({ type: 'up', point: p, start, pointerId: e.pointerId });
+      game.ui.updateControllerControls();
     }
     releasePointer() {
       const game = this.game; const p = game.pointer; game.pointer = null; if (p && game.canvas.hasPointerCapture(p.id)) game.canvas.releasePointerCapture(p.id); }
     cancelPointer(id) {
       const game = this.game;
-      if (game.pointer && id === game.pointer.id) { game.releasePointer(); game.controller?.cancelInput('cancel'); }
+      if (game.pointer && id === game.pointer.id) { game.releasePointer(); game.controller?.cancelInput('cancel'); game.ui.updateControllerControls(); }
     }
   }
   window.ShoparFootball.PointerInput = PointerInput;

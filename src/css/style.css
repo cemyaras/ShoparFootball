@@ -219,3 +219,8 @@ button.chance-indicator:hover { border-color: #c6e9a47a; }
   #match-score { margin: 0; font-size: 26px; }
   .result-content #result-detail:not(.sr-only) { grid-column: 1 / -1; margin: 0 auto 6px; }
 }
+
+.chip-button { position: absolute; z-index: 8; right: 20px; bottom: 20px; min-width: 64px; min-height: 44px; padding: 10px 14px; border: 1px solid #bad29888; border-radius: 24px; background: #10261bf2; color: #e3efd6; font: bold 12px Arial; cursor: pointer; }
+.chip-button[aria-pressed="true"] { background: #d0f58d; color: #10261b; border-color: #d0f58d; }
+.chip-button:disabled { opacity: .55; cursor: default; }
+@media (max-width: 1024px), (max-height: 500px) { .chip-button { right: 12px; bottom: 12px; } }

@@ -58,3 +58,64 @@ test('a completed drawing continues along its final tangent without stopping or 
   close(Math.hypot(beyond.x-end.x,beyond.y-end.y),50);
   close(Math.atan2(beyond.y-end.y,beyond.x-end.x),end.angle);
 });
+
+function aimedPoints(height, bend = 0) {
+  return Array.from({ length: 41 }, (_, i) => {
+    const t = i / 40;
+    return { x: 512 - 12 * t + bend * Math.sin(2 * Math.PI * t), y: 377 + (84 - height * .52 - 377) * t };
+  });
+}
+
+test('goal mouth projection maps continuous target heights onto the physical goal line', () => {
+  const ground = Controller.buildShot(aimedPoints(0), false, Physics);
+  assert.equal(ground.vz, 0); assert.ok(ground.preview.every(p => p.z === 0));
+  for (const height of [15, 30, 45, 75, 90, 112, 140]) {
+    const shot = Controller.buildShot(aimedPoints(height, 30), false, Physics), end = shot.preview.at(-1);
+    assert.ok(shot.vz > 0); close(end.y, 84);
+    close(end.z, height, .01); close(end.y - end.z * .52, 84 - height * .52, .01);
+    close(shot.route.preview.at(-1).y, 84);
+  }
+});
+
+test('CHIP has a slower rising and descending profile while preserving the full ground path', () => {
+  const points = aimedPoints(90, 35), normal = Controller.buildShot(points, false, Physics), chip = Controller.buildShot(points, true, Physics);
+  close(normal.route.length, chip.route.length);
+  assert.equal(JSON.stringify(normal.route.preview), JSON.stringify(chip.route.preview));
+  assert.ok(chip.speed < normal.speed * .5);
+  assert.ok(Math.max(...chip.preview.map(p => p.z)) > Math.max(...normal.preview.map(p => p.z)) + 20);
+  assert.ok(chip.preview.at(-2).z > chip.preview.at(-1).z);
+  assert.ok(normal.preview.at(-2).z < normal.preview.at(-1).z);
+  close(chip.preview.at(-1).z, 90, .01);
+  const lower = Controller.buildShot(aimedPoints(0), true, Physics);
+  assert.ok(lower.vz > 0); assert.ok(Math.max(...lower.preview.map(p => p.z)) > 50);
+});
+
+test('elevated flight and its preview agree at 30, 60 and 120 FPS using shared gravity and drag', () => {
+  for (const chip of [false, true]) {
+    const shot = Controller.buildShot(aimedPoints(90, 30), chip, Physics), states = [];
+    for (const fps of [30, 60, 120]) {
+      const r = shot.route;
+      const ball = { ...r.start, vx: Math.cos(r.heading) * shot.speed, vy: Math.sin(r.heading) * shot.speed,
+        z: 0, vz: shot.vz, spin: 0, age: 0, rotation: 0 };
+      const c = new Controller({ ball, physics: Physics, resultDelay: { pending: false } }); c.route = r;
+      for (let i = 0; i < fps * .4; i++) c.integrateShot(1 / fps);
+      const predicted = shot.preview[48];
+      close(ball.x, predicted.x); close(ball.y, predicted.y); close(ball.z, predicted.z);
+      states.push({ ...ball });
+    }
+    for (const state of states.slice(1)) { close(state.x, states[0].x); close(state.y, states[0].y); close(state.z, states[0].z); }
+  }
+});
+
+test('a lob falls, bounces and continues with shared restitution rather than a scripted height', () => {
+  const shot = Controller.buildShot(aimedPoints(0), true, Physics), r = shot.route;
+  const ball = { ...r.start, vx: Math.cos(r.heading) * shot.speed, vy: Math.sin(r.heading) * shot.speed,
+    z: 0, vz: shot.vz, spin: 0, age: 0, rotation: 0 };
+  const c = new Controller({ ball, physics: Physics, resultDelay: { pending: false } }); c.route = r;
+  let bounced = false;
+  for (let i = 0; i < 240; i++) {
+    const impact = c.integrateShot(1 / 120);
+    if (impact) { bounced = true; assert.ok(ball.vz > 0); break; }
+  }
+  assert.ok(bounced); assert.ok(c.travel >= r.length - 1);
+});

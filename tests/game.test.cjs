@@ -1341,3 +1341,51 @@ test('Draw the Shot can follow a drawn detour around a defender blocking the dir
   assert.notEqual(g.resolution.kind, 'blocked');
   assert.ok(['goal', 'save', 'post', 'wide'].includes(g.resolution.kind));
 });
+
+function drawElevatedShot(g, x, height, chip = false, bend = 0) {
+  if (chip) g.controller.handleInput({ type: 'chip-toggle' });
+  const start = { x: g.ball.x, y: g.ball.y }, y = 84 - height * .52;
+  g.onPointerDown(defensePointer(g, start));
+  for (let i = 1; i <= 30; i++) {
+    const t = i / 30;
+    g.onPointerMove(defensePointer(g, { x: start.x + (x - start.x) * t + bend * Math.sin(Math.PI * t), y: start.y + (y - start.y) * t }));
+  }
+  g.onPointerUp(defensePointer(g, { x, y }));
+}
+
+test('Draw the Shot elevated and chip attempts resolve through real keeper, defender and frame contacts', () => {
+  const cases = [[415,90,false,'goal'],[500,60,false,'save'],[530,0,false,'blocked'],[415,112,false,'bar'],
+    [400,90,false,'post'],[500,140,false,'high'],[500,90,true,'goal'],[500,30,true,'save'],[500,140,true,'high'],[415,90,false,'goal',40]];
+  for (const fps of [30,60,120]) for (const [x,height,chip,kind,bend = 0] of cases) {
+    const { game: g } = fixture(); g.startPractice(10); g.update(.9);
+    drawElevatedShot(g,x,height,chip,bend);
+    assert.equal(g.state,'BALL_IN_MOTION'); assert.equal(g.contact,null);
+    const preview = g.controller.shot.preview, expected = preview.at(-1);
+    assert.ok(height === 0 || g.ball.vz > 0);
+    for (let i=0;i<fps*16&&g.state!=='RESULT';i++) g.update(1/fps);
+    assert.equal(g.resolution.kind,kind,`${fps} FPS, ${x}, ${height}, chip ${chip}`);
+    if (['goal','bar','post','high'].includes(kind)) {
+      assert.ok(Math.abs(g.resolution.crossing.z-expected.z)<.02);
+      assert.ok(Math.abs(g.resolution.crossing.x-expected.x)<.02);
+    }
+    if (chip&&kind==='goal') assert.equal(g.flight.clearedKeeper,true);
+    assert.equal(g.stats.goals,kind==='goal'?1:0);
+  }
+});
+
+test('Draw the Shot CHIP control locks while drawing, resets on retry and stays out of other highlights', () => {
+  const { game: g, elements } = fixture(); g.startPractice(10); g.update(.9);
+  assert.equal(g.controller.chip,false); assert.equal(elements.get('chip-button').disabled,false);
+  elements.get('chip-button').dispatchEvent({type:'click'}); assert.equal(g.controller.chip,true);
+  const p = {x:g.ball.x,y:g.ball.y}; g.onPointerDown(defensePointer(g,p));
+  assert.equal(elements.get('chip-button').disabled,true);
+  assert.equal(g.controller.handleInput({type:'chip-toggle'}).handled,false); assert.equal(g.controller.chip,true);
+  g.cancelPointer(g.pointer.id); assert.equal(elements.get('chip-button').disabled,false);
+  elements.get('help-button').dispatchEvent({type:'click'});
+  assert.match(elements.get('help-guide').textContent,/Goal top/);
+  assert.match(elements.get('help-steps').innerHTML,/Release/);
+  elements.get('help-dialog').close(); g.restart(); g.update(.9);
+  assert.equal(g.controller.chip,false); assert.equal(g.controller.shot,null);
+  g.startPractice(0); g.update(.9); assert.equal(g.controllerPresentation().chipControl,undefined);
+  assert.equal(elements.get('chip-button').disabled,true);
+});

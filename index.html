@@ -50,6 +50,7 @@
         <div class="contact-footer hidden" id="contact-footer"><span>← CURVE →</span><span>↓ LOFT</span><div class="contact-timer"><i id="contact-timer-fill"></i></div></div>
         <div class="toast hidden" id="toast" role="status"></div>
         <div class="power-meter hidden" id="power-meter" aria-label="Kick power"><span aria-hidden="true">ϟ</span><div class="power-track"><i id="power-fill"></i></div><span id="power-value">—</span></div>
+        <button class="chip-button hidden" id="chip-button" type="button" aria-pressed="false" aria-label="Chip shot">CHIP</button>
         <button class="icon-button help-button" id="help-button" type="button" aria-label="How to play" title="How to play" aria-haspopup="dialog" aria-controls="help-dialog">?</button>
         <div id="flight-meter" class="flight-meter hidden" aria-label="Ball height relative to the crossbar"><span class="flight-track"><i id="flight-height"></i><b></b></span><span id="flight-label">GROUND</span></div>
         <span id="bottom-hint" class="sr-only" role="status">Drag back to aim</span>
@@ -63,8 +64,8 @@
   </dialog>
   <dialog class="conditions-dialog help-dialog" id="help-dialog" aria-labelledby="help-title">
     <div class="conditions-heading"><h2 id="help-title">How to play</h2><button id="help-close" class="icon-button" type="button" aria-label="Close help">×</button></div>
-    <div class="help-steps"><div><span aria-hidden="true">↙</span><strong>1. Drag back</strong><p>Aim &amp; power</p></div><div><span aria-hidden="true">↗</span><strong>2. Release</strong><p>Prepare your kick</p></div><div><span aria-hidden="true">◎</span><strong>3. Tap the ball</strong><p>Choose contact</p></div></div>
-    <div class="contact-guide"><span>← → Curve</span><span>↓ Loft</span><span>↑ Low shot</span></div><p class="help-receive">Incoming pass? Tap the ring to receive. Defending? Hold anywhere to chase. Release when the ball ring turns green. Cut the Pass? Tap a destination to intercept. Save the Penalty or Save the Shot? Swipe toward the shot, diagonally upward for high shots. Stay still for the middle.</p>
+    <div class="help-steps" id="help-steps"><div><span aria-hidden="true">↙</span><strong>1. Drag back</strong><p>Aim &amp; power</p></div><div><span aria-hidden="true">↗</span><strong>2. Release</strong><p>Prepare your kick</p></div><div><span aria-hidden="true">◎</span><strong>3. Tap the ball</strong><p>Choose contact</p></div></div>
+    <div class="contact-guide" id="help-guide"><span>← → Curve</span><span>↓ Loft</span><span>↑ Low shot</span></div><p class="help-receive" id="help-detail">Incoming pass? Tap the ring to receive. Defending? Hold anywhere to chase. Release when the ball ring turns green. Cut the Pass? Tap a destination to intercept. Save the Penalty or Save the Shot? Swipe toward the shot, diagonally upward for high shots. Stay still for the middle.</p>
     <button class="primary-button" id="help-done" type="button">GOT IT <span aria-hidden="true">✓</span></button>
   </dialog>
   <dialog class="conditions-dialog" id="conditions-dialog" aria-labelledby="conditions-title" aria-describedby="conditions-description">

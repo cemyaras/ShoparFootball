@@ -7,6 +7,11 @@
     constructor(game, definitions) { this.game = game; this.definitions = definitions; this.canvas = $('game'); this.canvasWrap = $('canvas-wrap'); }
     bindEvents() {
       const game = this.game;
+      this.defaultHelp = { steps: $('help-steps').innerHTML, guide: $('help-guide').innerHTML, detail: $('help-detail').textContent };
+      game.listen($('chip-button'), 'click', () => {
+        game.controller?.handleInput({ type: 'chip-toggle' });
+        game.updateUI();
+      });
       game.listen($('match-button'), 'click', () => game.startMatch());
       game.listen($('play-button'), 'click', () => game.beginSession());
       game.listen($('again-button'), 'click', () => game.startSession());
@@ -27,7 +32,7 @@
       });
       for (const id of ['conditions-close', 'conditions-done']) game.listen($(id), 'click', () => $('conditions-dialog').close());
       game.listen($('conditions-dialog'), 'close', () => { game.lastTime = null; });
-      game.listen($('help-button'), 'click', () => { game.cancelPointer(game.pointer?.id); $('help-dialog').showModal(); });
+      game.listen($('help-button'), 'click', () => { game.cancelPointer(game.pointer?.id); this.updateHelp(); $('help-dialog').showModal(); });
       for (const id of ['help-close', 'help-done']) game.listen($(id), 'click', () => $('help-dialog').close());
       game.listen($('help-dialog'), 'close', () => { game.lastTime = null; });
       game.listen($('conditions-dialog'), 'change', e => {
@@ -99,9 +104,23 @@
       $('conditions-icon').textContent = env.forecast.icon;
       $('conditions-button').setAttribute('aria-label', `Change conditions: ${env.label}`);
     }
+    updateControllerControls() {
+      const control = this.game.controllerPresentation().chipControl, button = $('chip-button');
+      button.classList.toggle('hidden', !control);
+      button.disabled = !control || control.disabled;
+      button.setAttribute('aria-pressed', String(Boolean(control?.active)));
+    }
+    updateHelp() {
+      const help = this.game.controllerPresentation().help;
+      $('help-steps').innerHTML = help ? help.steps.map((s, i) => `<div><span aria-hidden="true">${i + 1}</span><strong>${s.title}</strong><p>${s.detail}</p></div>`).join('') : this.defaultHelp.steps;
+      if (help) $('help-guide').textContent = help.guide;
+      else $('help-guide').innerHTML = this.defaultHelp.guide;
+      $('help-detail').textContent = help ? help.detail : this.defaultHelp.detail;
+    }
     updateUI() {
       const game = this.game;
       const match = game.session.match;
+      this.updateControllerControls();
       $('score').textContent = match ? match.score.home : game.stats.goals;
       $('opponent-score').textContent = match ? match.score.away : 0;
       $('chapter-number').textContent = match ? `${match.cursor + 1}/6${match.continuation ? ' · KEEPER' : ''}` : `${game.session.displayNumber}/${game.session.displayCount}`;

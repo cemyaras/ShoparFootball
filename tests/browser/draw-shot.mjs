@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
-import {open,size,evaluate,send,wait,errors,close,world,click,screen} from './browser.mjs';
+import fs from 'node:fs/promises';
+import {open,size,evaluate,send,wait,errors,close,world,click} from './browser.mjs';
 const url = process.env.GAME_URL || new URL('../../index.html', import.meta.url).href;
 let checks = 0;
 function check(pass, label) { assert.ok(pass, label); checks++; }
+async function screen(name) {
+  const data=await evaluate("footballGame.canvas.toDataURL('image/png').split(',')[1]");
+  await fs.writeFile(new URL(`../../test-results/browser/${name}.png`,import.meta.url),Buffer.from(data,'base64'));
+}
 async function until(expression) {
   for (let i=0;i<600;i++) { if(await evaluate(expression)) return; await wait(10); }
   throw Error(`Timed out: ${expression}`);
@@ -53,11 +58,13 @@ try {
       const t=i/60;
       await pointer('move',await world(origin.x+(500-origin.x)*t+45*Math.sin(2*Math.PI*t),origin.y+(84-origin.y)*t),mobile);
     }
+    await wait(40);
     check(await evaluate('(()=>{const c=footballGame.controller,r=c.route,C=ShoparFootball.DrawShotController;return r&&C.pointAt(r,r.length*.25).x>530&&C.pointAt(r,r.length*.75).x<480})()'),'Both bends survive in the preview');
     await screen(`draw-shot-s-curve-${width}`);
     await pointer('up',await world(500,84),mobile);
+    await until("footballGame.state==='BALL_IN_MOTION'");
     const follows=await evaluate(`(()=>{
-      const g=footballGame,c=g.controller;cancelAnimationFrame(g.raf);let samples=0,error=0;
+      const g=footballGame,c=g.controller,initial=g.state;cancelAnimationFrame(g.raf);let samples=0,error=0;
       for(let i=0;i<1800&&g.state!=='RESULT';i++){
         g.update(1/120);
         if(g.state==='BALL_IN_MOTION'&&!g.pendingResult){
@@ -66,9 +73,9 @@ try {
         }
       }
       g.render();g.lastTime=null;g.raf=requestAnimationFrame(g.frame);
-      return {samples,error,kind:g.resolution?.kind};
+      return {samples,error,kind:g.resolution?.kind,initial};
     })()`);
-    check(follows.samples>30&&follows.error<.00001,'Flight follows the displayed S curve');
+    check(follows.samples>30&&follows.error<.00001,`Flight follows the displayed S curve ${width}: ${JSON.stringify(follows)}`);
     check(['goal','save','blocked','wide','post'].includes(follows.kind),'Curved shot resolves through physical contact');
     await select(mobile);
     const b=await evaluate('({x:footballGame.ball.x,y:footballGame.ball.y})');
