@@ -146,7 +146,7 @@
       if (!active) return;
       const b = game.ball, phase = b.z < 5 ? 'GROUND' : b.vz > 8 ? 'RISING' : b.vz < -8 ? 'DROPPING' : 'AT THE TOP';
       $('flight-height').style.width = `${clamp(b.z / FIELD.crossbar, 0, 1.25) * 80}%`;
-      $('flight-label').textContent = b.z >= FIELD.crossbar ? 'ABOVE BAR' : phase;
+      $('flight-label').textContent = game.controllerPresentation().flightLabel || (b.z >= FIELD.crossbar ? 'ABOVE BAR' : phase);
       if (followingMiss && game.resolution.landing) $('flight-label').textContent = 'LANDED';
       $('bottom-hint').textContent = followingMiss ? `${game.resolution.kind === 'high' ? 'OVER THE BAR' : 'WIDE'} · ${game.resolution.landing ? 'LANDED OUTSIDE' : phase}` : `${(game.flight?.maxHeight || 0) > 45 || b.vz > 140 ? 'LOFTED KICK' : 'KICK'} · ${phase}`;
     }

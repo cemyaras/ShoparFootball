@@ -82,12 +82,13 @@ test('CHIP has a slower rising and descending profile while preserving the full 
   close(normal.route.length, chip.route.length);
   assert.equal(JSON.stringify(normal.route.preview), JSON.stringify(chip.route.preview));
   assert.ok(chip.speed < normal.speed * .5);
-  assert.ok(Math.max(...chip.preview.map(p => p.z)) > Math.max(...normal.preview.map(p => p.z)) + 20);
+  close(chip.speed / normal.speed, .45);
+  assert.ok(Math.max(...chip.preview.map(p => p.z)) > Math.max(...normal.preview.map(p => p.z)) + 5);
   assert.ok(chip.preview.at(-2).z > chip.preview.at(-1).z);
   assert.ok(normal.preview.at(-2).z < normal.preview.at(-1).z);
   close(chip.preview.at(-1).z, 90, .01);
   const lower = Controller.buildShot(aimedPoints(0), true, Physics);
-  assert.ok(lower.vz > 0); assert.ok(Math.max(...lower.preview.map(p => p.z)) > 50);
+  assert.ok(lower.vz > 0); assert.ok(Math.max(...lower.preview.map(p => p.z)) > 30);
 });
 
 test('elevated flight and its preview agree at 30, 60 and 120 FPS using shared gravity and drag', () => {

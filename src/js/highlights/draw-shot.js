@@ -92,7 +92,7 @@
       y: p.y + (mouth.bottom - end.y) * clamp((start.y - p.y) / (start.y - end.y), 0, 1) })) : points;
     const route = buildRoute(ground);
     if (!route) return null;
-    const speed = route.speed * (chip ? .36 : 1);
+    const speed = route.speed * (chip ? .45 : 1);
     let vz = 0;
     if (chip || targetHeight > 6) {
       // Measure travel time with the shared airborne drag, independent of gravity.
@@ -128,8 +128,13 @@
   class DrawShotController extends window.ShoparFootball.AttackController {
     constructor(context) { super(context); this.points = null; this.route = null; this.travel = 0; this.chip = false; this.shot = null; }
     getPresentation() {
+      const c = this.context, target = this.shot?.preview.at(-1);
+      const aimedAtGoal = c.flow.state === State.AIMING && target && Math.abs(target.y - FIELD.top) < .01 && target.x >= FIELD.goalLeft && target.x <= FIELD.goalRight;
+      const phase = c.ball.z < 5 ? 'GROUND' : c.ball.vz > 8 ? 'RISING' : c.ball.vz < -8 ? 'DROPPING' : 'AT THE TOP';
       return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw forward with smoother bends.' : 'Draw from the ball to a height in the goal. CHIP adds a lob. Release to shoot.') : '',
         ariaLabel: 'Draw the Shot. Draw from the ball to the goal. Finish higher in the goal for a higher shot. Turn CHIP on before drawing to lob the keeper.',
+        shotTarget: aimedAtGoal ? { ...target, label: target.z <= 6 ? 'GROUND' : target.z < GOAL.height * .65 ? 'MID' : 'HIGH' } : null,
+        flightLabel: c.flow.state === State.BALL_IN_MOTION && !c.resolution ? `HEIGHT NOW · ${phase}` : null,
         chipControl: this.context.flow.state === State.AIMING ? { active: this.chip, disabled: Boolean(this.points) } : null,
         help: { steps: [{ title: '1. Touch the ball', detail: 'CHIP on for a lob' }, { title: '2. Draw your route', detail: 'Finish higher for height' }, { title: '3. Release', detail: 'Shoot immediately' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
@@ -169,6 +174,11 @@
       return { handled: true };
     }
     cancelInput() { this.points = null; this.route = null; this.shot = null; this.context.feedback.power(0); }
+    update(dt) {
+      if (this.chip && this.context.flow.state === State.BALL_IN_MOTION) {
+        this.advanceMotion(dt * .85, step => this.updateMotion(step));
+      } else super.update(dt);
+    }
     integrateShot(dt) {
       if (this.context.resultDelay.pending || !this.route) return this.context.physics.integrateBall(this.context.ball, dt);
       return advanceRoute(this.context.physics, this.route, this, this.context.ball, dt);

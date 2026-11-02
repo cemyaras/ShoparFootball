@@ -68,6 +68,18 @@
       if (!aboveGoal && !drawn) this.drawing.drawBall(c, this.scene.ball);
       if (this.scene.resolution?.kind === 'goal' || this.scene.presentation().ballInNet) this.drawing.drawGoalBack(c, true);
       this.drawing.drawGoalFront(c);
+      const target = this.scene.presentation().shotTarget;
+      if (target) {
+        const y = target.y - target.z * HEIGHT_PROJECTION, radius = 8 / v.scale;
+        c.save(); c.fillStyle = '#10261b99'; c.strokeStyle = '#e5ffc0bb'; c.lineWidth = 1.5 / v.scale;
+        c.beginPath(); c.arc(target.x, y, radius, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.beginPath(); c.moveTo(target.x - radius * 1.5, y); c.lineTo(target.x + radius * 1.5, y);
+        c.moveTo(target.x, y - radius * 1.5); c.lineTo(target.x, y + radius * 1.5); c.stroke();
+        c.font = `bold ${10 / v.scale}px Arial`; c.textBaseline = 'middle';
+        const width = (target.label.length * 6 + 10) / v.scale;
+        c.fillStyle = '#10261bcc'; c.fillRect(target.x + 14 / v.scale, y - 9 / v.scale, width, 18 / v.scale);
+        c.fillStyle = '#e5ffc0'; c.fillText(target.label, target.x + 19 / v.scale, y); c.restore();
+      }
       if (aboveGoal) this.drawing.drawBall(c, this.scene.ball);
       this.drawing.drawCrossingMarker(c);
       for (const r of this.scene.ripples) {

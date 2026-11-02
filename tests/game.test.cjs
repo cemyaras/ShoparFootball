@@ -1389,3 +1389,30 @@ test('Draw the Shot CHIP control locks while drawing, resets on retry and stays 
   g.startPractice(0); g.update(.9); assert.equal(g.controllerPresentation().chipControl,undefined);
   assert.equal(elements.get('chip-button').disabled,true);
 });
+
+test('Draw the Shot targeting feedback and chip tempo reflect current physics without predicting a result', () => {
+  const { game: g, elements } = fixture();
+  for (const [height, label] of [[0,'GROUND'],[60,'MID'],[90,'HIGH']]) {
+    g.startPractice(10); g.update(.9);
+    const start = { x:g.ball.x,y:g.ball.y }, end = { x:500,y:84-height*.52 };
+    g.onPointerDown(defensePointer(g,start)); g.onPointerMove(defensePointer(g,end));
+    const target = g.controllerPresentation().shotTarget;
+    assert.equal(target.label,label); assert.ok(Math.abs(target.y-target.z*.52-end.y)<.02);
+    const before = JSON.stringify(g.controller.route); g.render(); assert.equal(JSON.stringify(g.controller.route),before);
+    g.cancelPointer(g.pointer.id);
+  }
+  drawElevatedShot(g,500,90,true);
+  let elapsed = 0;
+  while (!g.pendingResult && elapsed < 3) { g.update(1/120); elapsed += 1/120; }
+  assert.equal(g.resolution.kind,'goal'); assert.equal(g.flight.clearedKeeper,true);
+  assert.ok(elapsed < 1.8);
+  assert.ok(Math.abs(elapsed*.85-g.controller.shot.preview.at(-1).time)<.03);
+  g.startPractice(10); g.update(.9); g.transition('BALL_IN_MOTION');
+  for (const [vz,phase] of [[20,'RISING'],[0,'AT THE TOP'],[-20,'DROPPING']]) {
+    Object.assign(g.ball,{z:130,vz}); g.updateFlightUI();
+    assert.equal(elements.get('flight-label').textContent,`HEIGHT NOW · ${phase}`);
+  }
+  g.startPractice(0); g.update(.9); g.transition('BALL_IN_MOTION');
+  Object.assign(g.ball,{z:130,vz:20}); g.updateFlightUI();
+  assert.equal(elements.get('flight-label').textContent,'ABOVE BAR');
+});
