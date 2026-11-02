@@ -1302,16 +1302,18 @@ test('Draw the Shot invalid strokes and pointer cancellation leave another attem
   drawShot(g, 415, 40); assert.equal(g.state, 'BALL_IN_MOTION');
 });
 
-test('Draw the Shot normalizes straight and opposite curves with bounded turn and radius', () => {
+test('Draw the Shot preserves straight and opposite drawn curves with bounded speed', () => {
   const { window } = fixture(), build = window.ShoparFootball.DrawShotController.buildRoute;
   assert.equal(build([{ x: 500, y: 365 }, { x: 500, y: 370 }]), null);
   const straight = build([{ x: 500, y: 365 }, { x: 500, y: 84 }]);
-  assert.equal(straight.curvature, 0);
+  assert.ok(straight.preview.every(p => Math.abs(p.x - 500) < 1e-8));
   for (const sign of [-1, 1]) {
-    const route = build([{ x: 500, y: 365 }, { x: 500 + sign * 200, y: 220 }, { x: 500, y: 84 }]);
-    assert.equal(Math.sign(route.curvature), -sign);
-    assert.ok(Math.abs(route.curvature * route.length) <= 40 * Math.PI / 180 + 1e-10);
-    assert.ok(Math.abs(route.curvature) <= 1 / 120);
+    assert.equal(build([{ x: 500, y: 365 }, { x: 500 + sign * 200, y: 220 }, { x: 500, y: 84 }]), null);
+    const route = build(Array.from({ length: 41 }, (_, i) => ({ x: 500 + sign * 70 * Math.sin(Math.PI * i / 40), y: 365 - 281 * i / 40 })));
+    assert.ok(route);
+    const middle = route.preview[Math.floor(route.preview.length / 2)];
+    assert.equal(Math.sign(middle.x - 500), sign);
+    assert.ok(Math.abs(middle.x - 500) > 60);
     assert.ok(route.speed >= 430 && route.speed <= 700);
     assert.ok(Math.hypot(route.preview.at(-1).x - 500, route.preview.at(-1).y - 84) < 1e-8);
   }
@@ -1324,4 +1326,18 @@ test('Draw the Shot stays outside Play All and match schedules', () => {
   g.beginSession(); g.index = 9; g.beginHighlight(); g.update(.9); g.finish('wide');
   until(g, () => g.state === 'RESULT'); g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
   for (const random of [() => 0, () => .9]) { g.startMatch(random); assert.ok(!g.session.match.schedule.includes('draw-the-shot')); }
+});
+
+test('Draw the Shot can follow a drawn detour around a defender blocking the direct shot', () => {
+  const { game: g } = fixture(); g.startPractice(10); g.update(.9);
+  drawShot(g, 530, -90);
+  assert.equal(g.state, 'BALL_IN_MOTION');
+  let passed = false;
+  for (let i = 0; i < 1800 && g.state !== 'RESULT'; i++) {
+    g.update(1 / 120);
+    if (g.ball.y < 200) passed = true;
+  }
+  assert.ok(passed);
+  assert.notEqual(g.resolution.kind, 'blocked');
+  assert.ok(['goal', 'save', 'post', 'wide'].includes(g.resolution.kind));
 });
