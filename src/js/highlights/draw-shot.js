@@ -33,7 +33,7 @@
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
       angle: Math.atan2(b.y - a.y, b.x - a.x) };
   }
-  function buildRoute(points) {
+  function buildRoute(points, power = .6) {
     if (points.length < 2 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
     const start = points[0], end = points.at(-1);
     if (distance(start, end) < 24 || end.y >= start.y - 12) return null;
@@ -50,7 +50,8 @@
       weightedOffset += basis * (-x * dy + y * dx);
       weight += basis * basis;
     }
-    const limit = Math.min(span * .45, span * span / (4 * MIN_RADIUS), 160);
+    const charge = (clamp(power, .6, 1) - .6) / .4;
+    const limit = Math.min(span * .45, span * span / (4 * MIN_RADIUS), 160) * (1 - .5 * charge);
     let bend = weight ? clamp(weightedOffset / weight, -limit, limit) : 0;
     if (Math.abs(bend) < Math.max(6, span * .02)) bend = 0;
     const control = { x: (start.x + end.x) / 2 - dy * bend, y: (start.y + end.y) / 2 + dx * bend };
@@ -64,7 +65,7 @@
     const length = lengths.at(-1);
     return { start: { ...start }, preview, lengths, length,
       heading: Math.atan2(preview[1].y - start.y, preview[1].x - start.x),
-      speed: clamp(400 + .65 * span, 430, 700) };
+      speed: clamp(400 + .65 * span, 430, 700) * (1 + .25 * charge) };
   }
   function advanceRoute(physics, route, state, ball, dt) {
     const steps = Math.max(1, Math.ceil(dt * 240)), step = dt / steps;
@@ -78,7 +79,7 @@
     }
     return impact;
   }
-  function buildShot(points, chip, physics) {
+  function buildShot(points, chip, physics, power = .6) {
     if (points.length < 2) return null;
     const mouth = goalGeometry(), start = points[0], end = points.at(-1);
     const inGoal = end.x >= mouth.left - 24 && end.x <= mouth.right + 24 && end.y < mouth.bottom;
@@ -87,7 +88,7 @@
     // but put the horizontal endpoint on the real goal line before solving vertical flight.
     const ground = inGoal ? points.map(p => ({ x: p.x,
       y: p.y + (mouth.bottom - end.y) * clamp((start.y - p.y) / (start.y - end.y), 0, 1) })) : points;
-    const route = buildRoute(ground);
+    const route = buildRoute(ground, power);
     if (!route) return null;
     const speed = route.speed * (chip ? .45 : 1);
     let vz = 0;
@@ -123,19 +124,30 @@
     return { route, speed, vz, targetHeight, preview };
   }
   class DrawShotController extends window.ShoparFootball.AttackController {
-    constructor(context) { super(context); this.points = null; this.route = null; this.travel = 0; this.chip = false; this.shot = null; }
+    constructor(context) {
+      super(context); this.points = null; this.route = null; this.travel = 0; this.chip = false; this.shot = null;
+      this.power = .6; this.holdTime = 0; this.drawing = false; this.gestureStart = null; this.tutorialTime = 0;
+    }
+    enter() {
+      this.tutorialTime = this.context.memory.powerTutorialSeen ? 0 : 5;
+      this.context.memory.powerTutorialSeen = true;
+      super.enter();
+    }
     getPresentation() {
       const c = this.context, target = this.shot?.preview.at(-1);
       const aimedAtGoal = c.flow.state === State.AIMING && target && Math.abs(target.y - FIELD.top) < .01 && target.x >= FIELD.goalLeft && target.x <= FIELD.goalRight;
       const phase = c.ball.z < 5 ? 'GROUND' : c.ball.vz > 8 ? 'RISING' : c.ball.vz < -8 ? 'DROPPING' : 'AT THE TOP';
-      return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw toward your target in the goal.' : 'Draw from the ball to a height in the goal. CHIP adds a lob. Release to shoot.') : '',
-        ariaLabel: 'Draw the Shot. Draw from the ball to the goal. Finish higher in the goal for a higher shot. Turn CHIP on before drawing to lob the keeper.',
+      return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw toward your target in the goal.' : 'Draw from the ball. Hold for power, draw to aim, release to shoot.') : '',
+        ariaLabel: 'Draw the Shot. Hold the ball to charge from 60 to 100 percent. Draw to lock power and aim. Release to shoot. Finish higher in the goal for height. Turn CHIP on before holding for a lob.',
+        shotPower: c.flow.state === State.AIMING && this.points ? { x: c.player.x,
+          y: c.player.y - window.ShoparFootball.Core.SPRITES.playerHeight * window.ShoparFootball.Core.playerScale(c.player), value: this.power, locked: this.drawing } : null,
+        shotTutorial: c.flow.state === State.AIMING && this.tutorialTime > 0 && !this.points ? ['HOLD FOR POWER', 'DRAW TO AIM', 'RELEASE TO SHOOT'] : null,
         shotTarget: aimedAtGoal ? { ...target, label: target.z <= 6 ? 'GROUND' : target.z < GOAL.height * .65 ? 'MID' : 'HIGH' } : null,
         flightLabel: c.flow.state === State.BALL_IN_MOTION && !c.resolution ? `HEIGHT NOW · ${phase}` : null,
         chipControl: this.context.flow.state === State.AIMING ? { active: this.chip, disabled: Boolean(this.points) } : null,
-        help: { steps: [{ title: '1. Touch the ball', detail: 'CHIP on for a lob' }, { title: '2. Draw your route', detail: 'Finish higher for height' }, { title: '3. Release', detail: 'Shoot immediately' }],
+        help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
-          detail: 'Draw straight or curve around defenders. The solid line shows the flight; the dashed line shows its ground shadow. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
+          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The solid line shows the flight; the dashed line shows its ground shadow. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
     sample(point) {
@@ -143,7 +155,7 @@
       if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) { this.cancelInput(); return; }
       if (distance(this.points.at(-1), point) < .001) return;
       this.points.push({ ...point });
-      this.shot = buildShot(this.points, this.chip, this.context.physics);
+      this.shot = buildShot(this.points, this.chip, this.context.physics, this.power);
       this.route = this.shot?.route || null;
     }
     handleInput(input) {
@@ -157,9 +169,18 @@
       if (input.type === 'down') {
         if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
+        this.gestureStart = { ...input.point }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
         return { handled: true, capture: true, updateOnRelease: true };
       }
       if (!this.points) return { handled: false };
+      if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y)) { this.cancelInput(); return { handled: true }; }
+      if (!this.drawing) {
+        if (distance(input.point, this.gestureStart) < 8 / c.view.scale) {
+          if (input.type === 'up') this.cancelInput();
+          return { handled: true };
+        }
+        this.drawing = true;
+      }
       this.sample(input.point);
       if (input.type === 'up') {
         this.points = null;
@@ -171,8 +192,18 @@
       }
       return { handled: true };
     }
-    cancelInput() { this.points = null; this.route = null; this.shot = null; this.context.feedback.power(0); }
+    cancelInput() {
+      this.points = null; this.route = null; this.shot = null; this.gestureStart = null;
+      this.holdTime = 0; this.power = .6; this.drawing = false; this.context.feedback.power(0);
+    }
     update(dt) {
+      if (this.context.flow.state === State.AIMING) {
+        this.tutorialTime = Math.max(0, this.tutorialTime - dt);
+        if (this.points && !this.drawing) {
+          this.holdTime = Math.min(.8, this.holdTime + dt);
+          this.power = .6 + .4 * (this.holdTime / .8);
+        }
+      }
       if (this.chip && this.context.flow.state === State.BALL_IN_MOTION) {
         this.advanceMotion(dt * .85, step => this.updateMotion(step));
       } else super.update(dt);

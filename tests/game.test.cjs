@@ -1420,3 +1420,24 @@ test('Draw the Shot targeting feedback and chip tempo reflect current physics wi
   Object.assign(g.ball,{z:130,vz:20}); g.updateFlightUI();
   assert.equal(elements.get('flight-label').textContent,'ABOVE BAR');
 });
+
+test('Draw the Shot holds to charge, ignores jitter and locks power throughout one captured drawing', () => {
+  const {game:g}=fixture();g.startPractice(10);g.update(.9);
+  assert.ok(g.controllerPresentation().shotTutorial);
+  const start={x:g.ball.x,y:g.ball.y},end={x:415,y:84};
+  g.onPointerDown(defensePointer(g,start));assert.equal(g.controller.power,.6);
+  assert.equal(g.controllerPresentation().shotPower.value,.6);assert.equal(g.controllerPresentation().shotTutorial,null);
+  g.onPointerMove(defensePointer(g,{x:start.x+4/g.view.scale,y:start.y}));
+  assert.equal(g.controller.drawing,false);assert.equal(g.controller.route,null);
+  g.update(.4);assert.ok(Math.abs(g.controller.power-.8)<1e-9);
+  g.onPointerMove(defensePointer(g,end));assert.equal(g.controller.drawing,true);
+  const locked=g.controller.power,preview=JSON.stringify(g.controller.shot.preview);
+  g.update(.6);assert.equal(g.controller.power,locked);assert.equal(JSON.stringify(g.controller.shot.preview),preview);
+  assert.equal(g.controllerPresentation().shotPower.locked,true);g.render();
+  assert.ok(g.pointer);g.onPointerUp(defensePointer(g,end));assert.equal(g.state,'BALL_IN_MOTION');assert.equal(g.pointer,null);
+  until(g,()=>g.state==='RESULT');g.nextHighlight();g.update(.9);
+  assert.equal(g.controller.power,.6);assert.equal(g.controllerPresentation().shotTutorial,null);
+  g.onPointerDown(defensePointer(g,{x:g.ball.x,y:g.ball.y}));g.update(.8);assert.equal(g.controller.power,1);
+  g.update(2);assert.equal(g.controller.power,1);
+  g.cancelPointer(g.pointer.id);assert.equal(g.controller.power,.6);assert.equal(g.controllerPresentation().shotPower,null);assert.equal(g.state,'AIMING');
+});

@@ -138,3 +138,20 @@ test('sharp zigzags and dominant bends produce one bounded curve without extra p
   assert.ok(Controller.pointAt(Controller.buildRoute(wave(80,70,1)),140).x>530);
   assert.ok(Controller.pointAt(Controller.buildRoute(wave(80,-70,1)),140).x<470);
 });
+
+test('selected power increases speed but reduces the maximum single-curve bend', () => {
+  const points=wave(80,100,1),normal=Controller.buildRoute(points,.6),strong=Controller.buildRoute(points,1);
+  close(strong.speed/normal.speed,1.25);
+  const normalBend=Math.max(...normal.preview.map(p=>Math.abs(p.x-500)));
+  const strongBend=Math.max(...strong.preview.map(p=>Math.abs(p.x-500)));
+  close(strongBend/normalBend,.5);
+  close(strong.preview.at(-1).x,normal.preview.at(-1).x);close(strong.preview.at(-1).y,normal.preview.at(-1).y);
+  for(const chip of [false,true]) {
+    const shot=Controller.buildShot(aimedPoints(90),chip,Physics,1),r=shot.route;
+    close(shot.preview.at(-1).z,90,.01);
+    const ball={...r.start,vx:Math.cos(r.heading)*shot.speed,vy:Math.sin(r.heading)*shot.speed,z:0,vz:shot.vz,spin:0,age:0,rotation:0};
+    const c=new Controller({ball,physics:Physics,resultDelay:{pending:false}});c.route=r;
+    for(let i=0;i<36;i++)c.integrateShot(1/120);
+    const expected=shot.preview[36];close(ball.x,expected.x);close(ball.y,expected.y);close(ball.z,expected.z);
+  }
+});

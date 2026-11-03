@@ -104,6 +104,23 @@
       if (this.scene.state === State.BALL_CONTACT) this.drawing.drawContact(c);
       if (this.scene.flash > 0 && !this.scene.reducedMotion) { c.fillStyle = `rgba(255,255,255,${this.scene.flash * .4})`; c.fillRect(0, 0, W, H); }
       c.restore();
+      const power = this.scene.presentation().shotPower, tutorial = this.scene.presentation().shotTutorial;
+      if (power) {
+        const x = clamp(v.x + power.x * v.scale, 54, v.width - 54);
+        const y = clamp(v.y + power.y * v.scale - 38, 64, v.height - 38);
+        c.save(); c.fillStyle = '#10261bf2'; c.fillRect(x - 50, y, 100, 28);
+        c.strokeStyle = '#bad29888'; c.lineWidth = 1; c.strokeRect(x - 50, y, 100, 28);
+        c.fillStyle = power.locked ? '#d0f58d' : '#fff6a0'; c.font = 'bold 10px "Courier New", monospace';
+        c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(`POWER ${Math.round(power.value * 100)}%`, x, y + 4);
+        c.fillStyle = '#40554a'; c.fillRect(x - 44, y + 19, 88, 5);
+        c.fillStyle = power.locked ? '#d0f58d' : '#fff6a0'; c.fillRect(x - 44, y + 19, Math.round(88 * power.value), 5); c.restore();
+      }
+      if (tutorial) {
+        const x = v.width / 2, y = v.height < 500 ? 68 : 84;
+        c.save(); c.fillStyle = '#10261bed'; c.fillRect(x - 96, y, 192, 60);
+        c.font = 'bold 11px "Courier New", monospace'; c.textAlign = 'center'; c.textBaseline = 'top'; c.fillStyle = '#d0f58d';
+        tutorial.forEach((line, i) => c.fillText(line, x, y + 9 + i * 16)); c.restore();
+      }
       this.scene.drawOverlay(c);
       this.drawing.drawArcadeBanner(c);
     }
