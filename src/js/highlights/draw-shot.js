@@ -142,7 +142,11 @@
     constructor(context) {
       super(context); this.points = null; this.route = null; this.travel = 0; this.chip = false; this.shot = null;
       this.power = .6; this.holdTime = 0; this.drawing = false; this.gestureStart = null; this.tutorialTime = 0;
-      this.touchAim = false; this.liftDistance = 0; this.aimCursor = null;
+      this.touchAim = false; this.liftDistance = 0; this.effectiveAim = null;
+    }
+    get aimCursor() {
+      const aim = this.effectiveAim;
+      return aim ? { ...aim.points.at(-1), finger: aim.finger } : null;
     }
     enter() {
       this.tutorialTime = this.context.memory.powerTutorialSeen ? 0 : 5;
@@ -163,7 +167,8 @@
         chipControl: this.context.flow.state === State.AIMING ? { active: this.chip, disabled: Boolean(this.points) } : null,
         help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
-          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The short solid line estimates early flight; the dashed line shows its ground shadow. AIM marks your intended target. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
+          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. On touchscreens the solid line shows your aiming gesture, not the exact ball flight. With a mouse the short solid line estimates early flight; the dashed line shows its ground shadow. The target marks your intended aim. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
+        aimingPath: c.flow.state === State.AIMING && this.points ? this.effectiveAim?.points || null : null,
         aimCursor: c.flow.state === State.AIMING && this.points ? this.aimCursor : null,
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
@@ -190,7 +195,8 @@
           const progress = squared ? clamp(((p.x - start.x) * dx + (p.y - start.y) * dy) / squared, 0, 1) : 0;
           return { x: p.x + shiftX * progress, y: p.y + shiftY * progress };
         });
-        this.aimCursor = { ...cursor, finger: { ...point } };
+        // Keep display coordinates before buildShot's goal-height ground projection.
+        this.effectiveAim = { points: aimed, finger: { ...point } };
       }
       this.shot = buildShot(aimed, this.chip, this.context.physics, this.power);
       this.route = this.shot?.route || null;
@@ -207,8 +213,8 @@
         if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
         this.gestureStart = { ...input.point }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
-        this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0; this.aimCursor = null;
-        if (this.touchAim) this.aimCursor = { x: c.ball.x, y: c.ball.y, finger: { ...input.point } };
+        this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0; this.effectiveAim = null;
+        if (this.touchAim) this.effectiveAim = { points: this.points, finger: { ...input.point } };
         return { handled: true, capture: true, updateOnRelease: !this.touchAim };
       }
       if (!this.points) return { handled: false };
@@ -234,7 +240,7 @@
     }
     cancelInput() {
       this.points = null; this.route = null; this.shot = null; this.gestureStart = null;
-      this.touchAim = false; this.liftDistance = 0; this.aimCursor = null;
+      this.touchAim = false; this.liftDistance = 0; this.effectiveAim = null;
       this.holdTime = 0; this.power = .6; this.drawing = false; this.context.feedback.power(0);
     }
     update(dt) {

@@ -1450,6 +1450,16 @@ test('Draw the Shot holds to charge, ignores jitter and locks power throughout o
   g.cancelPointer(g.pointer.id);assert.equal(g.controller.power,.6);assert.equal(g.controllerPresentation().shotPower,null);assert.equal(g.state,'AIMING');
 });
 
+function assertTouchAim(g) {
+  const {aimingPath,aimCursor}=g.controllerPresentation(),v=g.view;
+  assert.ok(aimingPath?.length);
+  assert.equal(aimingPath[0].x,g.ball.x);assert.equal(aimingPath[0].y,g.ball.y);
+  const end=aimingPath.at(-1);
+  assert.equal(v.x+end.x*v.scale,v.x+aimCursor.x*v.scale);
+  assert.equal(v.y+end.y*v.scale,v.y+aimCursor.y*v.scale);
+  assert.equal(aimingPath,g.controller.effectiveAim.points);
+}
+
 test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or moving the release target', () => {
   for (const [width,height,dpr] of [[390,844,1],[844,390,3]]) {
     const {game:g,window}=fixture(width,height); window.devicePixelRatio=dpr;
@@ -1460,9 +1470,11 @@ test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or movi
     g.onPointerMove(touch({x:start.x,y:start.y-3/scale}));
     assert.equal(g.controller.drawing,false);
     assert.equal(g.controllerPresentation().aimCursor.x,start.x);assert.equal(g.controllerPresentation().aimCursor.y,start.y);
+    assertTouchAim(g);
     for(const pixels of [8.1,35,70]) {
       g.onPointerMove(touch({x:start.x,y:start.y-pixels/scale}));
       const cursor=g.controllerPresentation().aimCursor,t=Math.min(pixels/70,1);
+      assertTouchAim(g);
       assert.ok(Math.abs((cursor.finger.y-cursor.y)*scale-95*t*t*(3-2*t))<1e-8);
       if(g.controller.shot) {assert.equal(g.controller.shot.spin,0);assert.equal(g.controller.route.start.y,start.y);}
     }
@@ -1473,13 +1485,17 @@ test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or movi
       const t=i/30;g.onPointerMove(touch({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t}));
     }
     const c=g.controller,shot=c.shot,cursor=g.controllerPresentation().aimCursor;
+    assertTouchAim(g);
     assert.ok(Math.abs(cursor.x-415)<1e-8&&Math.abs(cursor.y-(84-90*.52))<1e-8);
     assert.ok(Math.abs(shot.target.z-90)<1e-8);assert.ok(Math.abs(shot.target.x-cursor.x)<1e-8);
+    assert.equal(shot.route.preview.at(-1).y,84);
+    assert.ok(Math.abs(g.controllerPresentation().aimingPath.at(-1).y-37.2)<1e-8);
     assert.equal(shot.spin,0);assert.ok(Math.abs(c.power-.8)<1e-8);
     g.update(.6);assert.ok(Math.abs(c.power-.8)<1e-8);
     g.onPointerUp(touch({x:end.x+20/scale,y:end.y+30/scale}));
     assert.equal(g.state,'BALL_IN_MOTION');assert.equal(c.shot,shot);assert.equal(g.pointer,null);
     assert.equal(g.controllerPresentation().aimCursor,null);
+    assert.equal(g.controllerPresentation().aimingPath,null);
     assert.ok(Math.abs(g.ball.vx-Math.cos(shot.heading)*shot.speed)<1e-8);
     assert.ok(Math.abs(g.ball.vy-Math.sin(shot.heading)*shot.speed)<1e-8);
   }
@@ -1497,6 +1513,7 @@ test('Draw the Shot keeps the lifted cursor and computed target inside the same 
       const t=i/20;g.onPointerMove(event({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t}));
     }
     const c=g.controller,cursor=c.getPresentation().aimCursor;
+    assertTouchAim(g);
     assert.ok(v.x+cursor.x*v.scale>=14-1e-8&&v.x+cursor.x*v.scale<=width-14+1e-8);
     assert.ok(v.y+cursor.y*v.scale>=(height<500?60:80)-1e-8&&v.y+cursor.y*v.scale<=height-14+1e-8);
     if(edge!=='bottom') {
@@ -1523,6 +1540,8 @@ test('Draw the Shot keeps touch curves, mouse coordinates and cancellation indep
     assert.ok(Math.abs(g.controller.shot.target.y-84)<1e-8);
     assert.ok(Math.abs(g.controller.shot.target.z)<1e-8);
     assert.equal(Boolean(g.controllerPresentation().aimCursor),pointerType==='touch');
+    if(pointerType==='touch')assertTouchAim(g);
+    else assert.equal(g.controllerPresentation().aimingPath,null);
     if(pointerType==='mouse') {
       g.onPointerUp(event({x:430,y:84}));
       assert.equal(g.controller.shot.target.x,430);assert.equal(g.state,'BALL_IN_MOTION');
@@ -1541,6 +1560,7 @@ test('Draw the Shot keeps touch curves, mouse coordinates and cancellation indep
     }
     assert.equal(g.state,'AIMING');assert.equal(g.pointer,null);assert.equal(g.controller.shot,null);
     assert.equal(g.controllerPresentation().aimCursor,null);assert.equal(g.stats.goals+g.stats.misses,0);
+    assert.equal(g.controllerPresentation().aimingPath,null);
   }
 });
 

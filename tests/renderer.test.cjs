@@ -66,11 +66,23 @@ test('CanvasRenderer preserves world/contact/screen layer ordering and the viewp
 });
 
 test('CanvasRenderer draws a CSS-sized lifted cursor and finger connector without mutating presentation', () => {
-  const presentation=freeze({aimCursor:{x:415,y:37.2,finger:{x:415,y:105.95}},shotTarget:{x:415,y:84,z:90,label:'AIM HIGH'}});
+  const presentation=freeze({aimingPath:[{x:512,y:377},{x:450,y:200},{x:415,y:37.2}],
+    aimCursor:{x:415,y:37.2,finger:{x:415,y:105.95}},shotTarget:{x:415,y:84,z:90,label:'AIM HIGH'},
+    shotPreview:[{x:512,y:377,z:0},{x:9876,y:6543,z:20}]});
   const h=headless(presentation),before=JSON.stringify(presentation);freeze(h.world);h.renderer.render();
   assert.equal(JSON.stringify(presentation),before);
   assert.ok(h.log.some(call=>call[0]==='moveTo'&&call[1]===415&&call[2]===105.95));
   assert.ok(h.log.some(call=>call[0]==='arc'&&call[1]===415&&call[2]===37.2&&call[3]===5/.8));
+  assert.ok(h.log.some(call=>call[0]==='lineTo'&&call[1]===415&&call[2]===37.2));
+  assert.ok(!h.log.some(call=>call[0]==='lineTo'&&call[1]===9876),'touch hides the physical preview');
+  assert.ok(!h.log.some(call=>call[0]==='fillText'&&call[1]==='AIM HIGH'),'touch uses only the crosshair');
+});
+
+test('CanvasRenderer keeps mouse flight preview, height projection and target labels', () => {
+  const h=headless(freeze({shotPreview:[{x:512,y:377,z:0},{x:9876,y:6543,z:20}],shotTarget:{x:415,y:84,z:90,label:'AIM HIGH'}}));
+  h.renderer.render();
+  assert.ok(h.log.some(call=>call[0]==='lineTo'&&call[1]===9876&&call[2]===6543-20*.52));
+  assert.ok(h.log.some(call=>call[0]==='fillText'&&call[1]==='AIM HIGH'));
 });
 
 test('shared pose data resolves controlled, running, kick, tackle and keeper save presentation without drawing', () => {

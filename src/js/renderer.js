@@ -34,8 +34,8 @@
       this.drawing.drawPitch(c); this.drawing.drawGoalBack(c); this.drawing.drawRunMarkers(c);
       this.scene.drawWorld(c);
       if (this.scene.state === State.AIMING && this.scene.aim?.power > .03) this.drawing.drawAim(c);
-      const preview = this.scene.presentation().shotPreview;
-      if (preview?.length) {
+      const preview = this.scene.presentation().shotPreview, aimingPath = this.scene.presentation().aimingPath;
+      if (!aimingPath && preview?.length) {
         const airborne = preview.some(p => p.z > 1);
         c.save(); c.lineWidth = 2 / v.scale;
         if (airborne) {
@@ -68,8 +68,14 @@
       if (!aboveGoal && !drawn) this.drawing.drawBall(c, this.scene.ball);
       if (this.scene.resolution?.kind === 'goal' || this.scene.presentation().ballInNet) this.drawing.drawGoalBack(c, true);
       this.drawing.drawGoalFront(c);
+      if (aimingPath?.length > 1) {
+        c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.beginPath();
+        aimingPath.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y));
+        c.strokeStyle = '#10261bcc'; c.lineWidth = 5 / v.scale; c.stroke();
+        c.strokeStyle = '#d0f58d'; c.lineWidth = 3 / v.scale; c.stroke(); c.restore();
+      }
       const target = this.scene.presentation().shotTarget, cursor = this.scene.presentation().aimCursor;
-      if (target) {
+      if (target && !aimingPath) {
         const y = target.y - target.z * HEIGHT_PROJECTION, radius = 8 / v.scale;
         c.save(); c.fillStyle = '#10261b99'; c.strokeStyle = '#e5ffc0bb'; c.lineWidth = 1.5 / v.scale;
         if (!cursor) {
