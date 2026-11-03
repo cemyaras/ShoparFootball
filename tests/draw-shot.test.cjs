@@ -9,16 +9,14 @@ const { DrawShotController: Controller, Physics } = window.ShoparFootball;
 const wave = (samples, amplitude = 45, cycles = 2) => Array.from({length:samples+1},(_,i)=>({x:500+amplitude*Math.sin(cycles*Math.PI*i/samples),y:365-281*i/samples}));
 function close(a,b,tolerance=1e-7) { assert.ok(Math.abs(a-b)<tolerance, `${a} differs from ${b}`); }
 
-test('full-path resampling preserves opposite bends even when start, middle and end coincide', () => {
+test('balanced S strokes and small hand tremors resolve to a straight natural shot', () => {
   const curve = Controller.buildRoute(wave(80)), straight = Controller.buildRoute(wave(80,0));
   assert.ok(curve); assert.ok(straight);
-  const first = Controller.pointAt(curve,curve.length*.25), second = Controller.pointAt(curve,curve.length*.75);
-  assert.ok(first.x > 530); assert.ok(second.x < 470);
-  assert.ok(straight.preview.every(p=>Math.abs(p.x-500)<1e-8));
-  close(curve.preview[0].x,500); close(curve.preview[0].y,365);
-  close(curve.preview.at(-1).x,500); close(curve.preview.at(-1).y,84);
-  // The smoothing window keeps the intended detour, including its interior samples.
-  for (const p of curve.preview) close(p.x,500+45*Math.sin(2*Math.PI*(365-p.y)/281),5);
+  for (const route of [curve,straight,Controller.buildRoute(wave(160,2,15))]) {
+    assert.ok(route.preview.every(p=>Math.abs(p.x-500)<1e-7));
+    close(route.preview[0].y,365); close(route.preview.at(-1).y,84);
+    close(route.speed,straight.speed);
+  }
 });
 
 test('spatial resampling ignores pointer event density and limits sharp or invalid drawings', () => {
@@ -32,7 +30,7 @@ test('spatial resampling ignores pointer event density and limits sharp or inval
   for(let i=0;i<a.preview.length;i++){close(a.preview[i].x,b.preview[i].x);close(a.preview[i].y,b.preview[i].y);}
   assert.equal(Controller.buildRoute([{x:500,y:365},{x:500,y:350}]),null);
   assert.equal(Controller.buildRoute([{x:500,y:365},{x:Infinity,y:84}]),null);
-  assert.equal(Controller.buildRoute([{x:500,y:365},{x:510,y:330},{x:500,y:360},{x:500,y:84}]),null);
+  assert.equal(Boolean(Controller.buildRoute([{x:500,y:365},{x:510,y:330},{x:500,y:360},{x:500,y:84}])),true);
 });
 
 test('ground flight samples the displayed route identically at 30, 60 and 120 FPS', () => {
@@ -119,4 +117,24 @@ test('a lob falls, bounces and continues with shared restitution rather than a s
     if (impact) { bounced = true; assert.ok(ball.vz > 0); break; }
   }
   assert.ok(bounced); assert.ok(c.travel >= r.length - 1);
+});
+
+
+test('sharp zigzags and dominant bends produce one bounded curve without extra power', () => {
+  const zigzag=Array.from({length:81},(_,i)=>({x:i===0||i===80?500:500+(i%2?220:-220),y:365-281*i/80}));
+  const straight=Controller.buildRoute(wave(80,0));
+  for(const points of [zigzag,wave(80,70,1),wave(80,-70,1)]) {
+    const route=Controller.buildRoute(points);assert.ok(route);close(route.speed,straight.speed);
+    close(route.preview[0].x,500);close(route.preview.at(-1).x,500);close(route.preview.at(-1).y,84);
+    const signs=new Set();
+    for(let i=1;i<route.preview.length-1;i++){
+      const a=route.preview[i-1],b=route.preview[i],c=route.preview[i+1];
+      const cross=(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x);
+      if(Math.abs(cross)>1e-8)signs.add(Math.sign(cross));
+    }
+    assert.ok(signs.size<=1);
+    assert.ok(Math.max(...route.preview.map(p=>Math.abs(p.x-500)))<=80);
+  }
+  assert.ok(Controller.pointAt(Controller.buildRoute(wave(80,70,1)),140).x>530);
+  assert.ok(Controller.pointAt(Controller.buildRoute(wave(80,-70,1)),140).x<470);
 });

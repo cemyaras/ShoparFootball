@@ -1298,6 +1298,10 @@ test('Draw the Shot invalid strokes and pointer cancellation leave another attem
   const before = JSON.stringify(g.controller.route); g.render(); assert.equal(JSON.stringify(g.controller.route), before);
   g.cancelPointer(e.pointerId); assert.equal(g.controller.route, null); assert.equal(g.kick, null);
   g.onPointerUp(e); assert.equal(g.state, 'AIMING');
+  g.onPointerDown(defensePointer(g,p));
+  g.controller.handleInput({type:'move',point:{x:NaN,y:84}});
+  g.onPointerUp(defensePointer(g,{x:415,y:84}));
+  assert.equal(g.state,'AIMING'); assert.equal(g.kick,null); assert.equal(g.pointer,null);
   e = defensePointer(g, { x: p.x, y: p.y + 60 }); g.onPointerDown(e); assert.equal(g.pointer, null);
   drawShot(g, 415, 40); assert.equal(g.state, 'BALL_IN_MOTION');
 });
@@ -1308,7 +1312,7 @@ test('Draw the Shot preserves straight and opposite drawn curves with bounded sp
   const straight = build([{ x: 500, y: 365 }, { x: 500, y: 84 }]);
   assert.ok(straight.preview.every(p => Math.abs(p.x - 500) < 1e-8));
   for (const sign of [-1, 1]) {
-    assert.equal(build([{ x: 500, y: 365 }, { x: 500 + sign * 200, y: 220 }, { x: 500, y: 84 }]), null);
+    assert.ok(build([{ x: 500, y: 365 }, { x: 500 + sign * 200, y: 220 }, { x: 500, y: 84 }]));
     const route = build(Array.from({ length: 41 }, (_, i) => ({ x: 500 + sign * 70 * Math.sin(Math.PI * i / 40), y: 365 - 281 * i / 40 })));
     assert.ok(route);
     const middle = route.preview[Math.floor(route.preview.length / 2)];

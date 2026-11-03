@@ -59,7 +59,7 @@ try {
       await pointer('move',await world(origin.x+(500-origin.x)*t+45*Math.sin(2*Math.PI*t),origin.y+(84-origin.y)*t),mobile);
     }
     await wait(40);
-    check(await evaluate('(()=>{const c=footballGame.controller,r=c.route,C=ShoparFootball.DrawShotController;return r&&C.pointAt(r,r.length*.25).x>530&&C.pointAt(r,r.length*.75).x<480})()'),'Both bends survive in the preview');
+    check(await evaluate(`(()=>{const r=footballGame.controller.route;return r&&r.preview.every(p=>p.x>=500-.01&&p.x<=${origin.x}+.01)})()`),'Balanced S drawing resolves to a straight interpreted preview');
     await screen(`draw-shot-s-curve-${width}`);
     await pointer('up',await world(500,84),mobile);
     await until("footballGame.state==='BALL_IN_MOTION'");
@@ -75,7 +75,7 @@ try {
       g.render();g.lastTime=null;g.raf=requestAnimationFrame(g.frame);
       return {samples,error,kind:g.resolution?.kind,initial};
     })()`);
-    check(follows.samples>30&&follows.error<.00001,`Flight follows the displayed S curve ${width}: ${JSON.stringify(follows)}`);
+    check(follows.samples>30&&follows.error<.00001,`Flight follows the interpreted preview ${width}: ${JSON.stringify(follows)}`);
     check(['goal','save','blocked','wide','post'].includes(follows.kind),'Curved shot resolves through physical contact');
     await select(mobile);
     const b=await evaluate('({x:footballGame.ball.x,y:footballGame.ball.y})');

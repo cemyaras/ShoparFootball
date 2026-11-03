@@ -37,37 +37,34 @@
     if (points.length < 2 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
     const start = points[0], end = points.at(-1);
     if (distance(start, end) < 24 || end.y >= start.y - 12) return null;
+    const span = distance(start, end), dx = (end.x - start.x) / span, dy = (end.y - start.y) / span;
     let rawLength = 0;
     for (let i = 1; i < points.length; i++) rawLength += distance(points[i - 1], points[i]);
-    if (rawLength > 3200) return null;
-    let smooth = resample(points, SAMPLE_DISTANCE);
-    if (smooth.length > 400) return null;
-    // Local convex averaging rounds corners without spline overshoot or global arc fitting.
-    // The fixed spatial window gives dense and sparse recordings the same treatment.
-    for (let pass = 0; pass < 3; pass++) {
-      smooth = smooth.map((p, i) => {
-        if (i === 0 || i === smooth.length - 1) return p;
-        let x = 0, y = 0;
-        for (let offset = -2; offset <= 2; offset++) {
-          const neighbor = smooth[clamp(i + offset, 0, smooth.length - 1)], weight = 3 - Math.abs(offset);
-          x += neighbor.x * weight; y += neighbor.y * weight;
-        }
-        return { x: x / 9, y: y / 9 };
-      });
+    if (!Number.isFinite(rawLength)) return null;
+    const samples = resample(points, Math.max(SAMPLE_DISTANCE, rawLength / 256));
+    let weightedOffset = 0, weight = 0;
+    // Fit the overall sideways intention. Opposing bends cancel rather than becoming zigzags.
+    for (const p of samples) {
+      const x = p.x - start.x, y = p.y - start.y;
+      const progress = clamp((x * dx + y * dy) / span, 0, 1), basis = 2 * progress * (1 - progress);
+      weightedOffset += basis * (-x * dy + y * dx);
+      weight += basis * basis;
     }
-    // Reject a remaining hairpin instead of secretly replacing the player's route.
-    for (let i = 1; i < smooth.length - 1; i++) {
-      const a = smooth[i - 1], b = smooth[i], c = smooth[i + 1];
-      const ab = distance(a, b), bc = distance(b, c), ac = distance(a, c);
-      const cross = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
-      if (ab < .001 || bc < .001 || ac < .001 || 2 * cross / (ab * bc * ac) > 1 / MIN_RADIUS) return null;
+    const limit = Math.min(span * .45, span * span / (4 * MIN_RADIUS), 160);
+    let bend = weight ? clamp(weightedOffset / weight, -limit, limit) : 0;
+    if (Math.abs(bend) < Math.max(6, span * .02)) bend = 0;
+    const control = { x: (start.x + end.x) / 2 - dy * bend, y: (start.y + end.y) / 2 + dx * bend };
+    const segments = clamp(Math.ceil(span / 4), 16, 256), preview = [], lengths = [0];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments, u = 1 - t;
+      preview.push({ x: u * u * start.x + 2 * u * t * control.x + t * t * end.x,
+        y: u * u * start.y + 2 * u * t * control.y + t * t * end.y });
+      if (i) lengths.push(lengths.at(-1) + distance(preview[i - 1], preview[i]));
     }
-    const preview = resample(smooth, 4), lengths = [0];
-    for (let i = 1; i < preview.length; i++) lengths.push(lengths.at(-1) + distance(preview[i - 1], preview[i]));
     const length = lengths.at(-1);
     return { start: { ...start }, preview, lengths, length,
       heading: Math.atan2(preview[1].y - start.y, preview[1].x - start.x),
-      speed: clamp(400 + .65 * length, 430, 700) };
+      speed: clamp(400 + .65 * span, 430, 700) };
   }
   function advanceRoute(physics, route, state, ball, dt) {
     const steps = Math.max(1, Math.ceil(dt * 240)), step = dt / steps;
@@ -131,7 +128,7 @@
       const c = this.context, target = this.shot?.preview.at(-1);
       const aimedAtGoal = c.flow.state === State.AIMING && target && Math.abs(target.y - FIELD.top) < .01 && target.x >= FIELD.goalLeft && target.x <= FIELD.goalRight;
       const phase = c.ball.z < 5 ? 'GROUND' : c.ball.vz > 8 ? 'RISING' : c.ball.vz < -8 ? 'DROPPING' : 'AT THE TOP';
-      return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw forward with smoother bends.' : 'Draw from the ball to a height in the goal. CHIP adds a lob. Release to shoot.') : '',
+      return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw toward your target in the goal.' : 'Draw from the ball to a height in the goal. CHIP adds a lob. Release to shoot.') : '',
         ariaLabel: 'Draw the Shot. Draw from the ball to the goal. Finish higher in the goal for a higher shot. Turn CHIP on before drawing to lob the keeper.',
         shotTarget: aimedAtGoal ? { ...target, label: target.z <= 6 ? 'GROUND' : target.z < GOAL.height * .65 ? 'MID' : 'HIGH' } : null,
         flightLabel: c.flow.state === State.BALL_IN_MOTION && !c.resolution ? `HEIGHT NOW · ${phase}` : null,
@@ -142,7 +139,8 @@
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
     sample(point) {
-      if (!this.points || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      if (!this.points) return;
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) { this.cancelInput(); return; }
       if (distance(this.points.at(-1), point) < .001) return;
       this.points.push({ ...point });
       this.shot = buildShot(this.points, this.chip, this.context.physics);
@@ -157,7 +155,7 @@
         return { handled: true };
       }
       if (input.type === 'down') {
-        if (distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
+        if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
         return { handled: true, capture: true, updateOnRelease: true };
       }
@@ -165,7 +163,7 @@
       this.sample(input.point);
       if (input.type === 'up') {
         this.points = null;
-        if (!this.route) { c.feedback.toast('Draw a longer path toward goal with smoother bends.', 1.5); return { handled: true }; }
+        if (!this.route) { c.feedback.toast('Draw a longer path toward goal.', 1.5); return { handled: true }; }
         const r = this.route;
         c.play.kick = { dx: Math.cos(r.heading), dy: Math.sin(r.heading), power: clamp((this.shot.speed - 220) / 530, 0, 1) };
         this.travel = 0;
