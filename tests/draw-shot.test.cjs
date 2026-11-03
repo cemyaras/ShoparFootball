@@ -33,6 +33,46 @@ test('spatial resampling ignores pointer event density and limits sharp or inval
   assert.equal(Boolean(Controller.buildRoute([{x:500,y:365},{x:510,y:330},{x:500,y:360},{x:500,y:84}])),true);
 });
 
+test('visual aim removes jitter and opposing bends while preserving a deliberate single curve and its endpoints', () => {
+  for(const [amplitude,cycles] of [[0,1],[2,15],[45,2],[-45,1],[45,1]]) {
+    const points=wave(160,amplitude,cycles),before=JSON.stringify(points),path=Controller.buildVisualPath(points);
+    assert.equal(JSON.stringify(points),before);
+    assert.equal(path[0].x,points[0].x);assert.equal(path[0].y,points[0].y);
+    assert.equal(path.at(-1).x,points.at(-1).x);assert.equal(path.at(-1).y,points.at(-1).y);
+    for(let i=1;i<path.length;i++)assert.ok(path[i].y<path[i-1].y,'curve advances toward the target without loops');
+    if(cycles>1||amplitude===0)assert.ok(path.every(p=>Math.abs(p.x-500)<1e-7));
+    else {
+      assert.equal(Math.sign(path[Math.floor(path.length/2)].x-500),Math.sign(amplitude));
+      assert.ok(Math.max(...path.map(p=>Math.abs(p.x-500)))>35);
+      assert.ok(path.every(p=>(p.x-500)*Math.sign(amplitude)>=-1e-7));
+    }
+    for(let i=2;i<path.length-1;i++)close(path[i+1].x-3*path[i].x+3*path[i-1].x-path[i-2].x,0);
+  }
+});
+
+test('visual aim stays visible for short or sideways input and remains stable under small endpoint changes', () => {
+  for(const points of [[{x:500,y:365}],[{x:500,y:365},{x:502,y:363}],
+    [{x:500,y:365},{x:540,y:365}],[{x:500,y:365},{x:520,y:390}]]) {
+    const path=Controller.buildVisualPath(points);
+    assert.ok(path.length>=points.length);assert.equal(path.at(-1).x,points.at(-1).x);assert.equal(path.at(-1).y,points.at(-1).y);
+    assert.equal(Controller.buildRoute(points),null,'visual eligibility does not allow an invalid shot');
+  }
+  const points=wave(80,40,1),original=Controller.buildVisualPath(points);
+  for(const dx of [-2,2,-1]) {
+    const changed=Controller.buildVisualPath([...points,{x:points.at(-1).x+dx,y:points.at(-1).y+1}]);
+    for(let i=0;i<=20;i++) {
+      const a=original[Math.round((original.length-1)*i/20)],b=changed[Math.round((changed.length-1)*i/20)];
+      assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<5,'small direction change does not reshape the curve abruptly');
+    }
+  }
+  const sideways=[{x:500,y:365},{x:600,y:330},{x:700,y:352}];
+  const a=Controller.buildVisualPath(sideways),b=Controller.buildVisualPath([...sideways.slice(0,-1),{x:700,y:354}]);
+  for(let i=0;i<=20;i++) {
+    const p=a[Math.round((a.length-1)*i/20)],q=b[Math.round((b.length-1)*i/20)];
+    assert.ok(Math.hypot(p.x-q.x,p.y-q.y)<5,'crossing the shot direction threshold does not snap the visual curve');
+  }
+});
+
 function launch(shot) {
   const ball={...shot.route.start,vx:Math.cos(shot.heading)*shot.speed,vy:Math.sin(shot.heading)*shot.speed,z:0,vz:shot.vz,spin:shot.spin,age:0,rotation:0};
   const context={ball,physics:Physics,resultDelay:{pending:false}},controller=new Controller(context);

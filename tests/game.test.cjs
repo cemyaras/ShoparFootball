@@ -1457,7 +1457,10 @@ function assertTouchAim(g) {
   const end=aimingPath.at(-1);
   assert.equal(v.x+end.x*v.scale,v.x+aimCursor.x*v.scale);
   assert.equal(v.y+end.y*v.scale,v.y+aimCursor.y*v.scale);
-  assert.equal(aimingPath,g.controller.effectiveAim.points);
+  assert.equal(aimingPath,g.controller.effectiveAim.path);
+  const points=g.controller.effectiveAim.points;
+  assert.notEqual(aimingPath,points);
+  assert.equal(end.x,points.at(-1).x);assert.equal(end.y,points.at(-1).y);
 }
 
 test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or moving the release target', () => {

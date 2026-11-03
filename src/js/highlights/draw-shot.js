@@ -41,10 +41,11 @@
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
       angle: Math.atan2(b.y - a.y, b.x - a.x) };
   }
-  function buildRoute(points) {
+  function buildRoute(points, visualOnly = false) {
     if (points.length < 2 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
     const start = points[0], end = points.at(-1);
-    if (distance(start, end) < 24 || end.y >= start.y - 12) return null;
+    const separation = distance(start, end);
+    if (separation < .001 || (!visualOnly && (separation < 24 || end.y >= start.y - 12))) return null;
     const span = distance(start, end), dx = (end.x - start.x) / span, dy = (end.y - start.y) / span;
     let rawLength = 0;
     for (let i = 1; i < points.length; i++) rawLength += distance(points[i - 1], points[i]);
@@ -73,6 +74,12 @@
     return { start: { ...start }, preview, lengths, length,
       heading: Math.atan2(preview[1].y - start.y, preview[1].x - start.x),
       speed: clamp(400 + .65 * span, 430, 700) };
+  }
+  function buildVisualPath(points) {
+    // Fit the lifted display coordinates, before any goal-height projection.
+    // Incomplete strokes still need a visible line even when they cannot be shot.
+    const route = buildRoute(points, true);
+    return route ? route.preview : points.length < 2 ? points.map(p => ({ ...p })) : [{ ...points[0] }, { ...points.at(-1) }];
   }
   function turnShot(ball, spin, dt) {
     const speed = Math.hypot(ball.vx, ball.vy);
@@ -146,7 +153,7 @@
     }
     get aimCursor() {
       const aim = this.effectiveAim;
-      return aim ? { ...aim.points.at(-1), finger: aim.finger } : null;
+      return aim ? { ...aim.path.at(-1), finger: aim.finger } : null;
     }
     enter() {
       this.tutorialTime = this.context.memory.powerTutorialSeen ? 0 : 5;
@@ -168,7 +175,7 @@
         help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
           detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. On touchscreens the solid line shows your aiming gesture, not the exact ball flight. With a mouse the short solid line estimates early flight; the dashed line shows its ground shadow. The target marks your intended aim. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
-        aimingPath: c.flow.state === State.AIMING && this.points ? this.effectiveAim?.points || null : null,
+        aimingPath: c.flow.state === State.AIMING && this.points ? this.effectiveAim?.path || null : null,
         aimCursor: c.flow.state === State.AIMING && this.points ? this.aimCursor : null,
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
@@ -196,7 +203,7 @@
           return { x: p.x + shiftX * progress, y: p.y + shiftY * progress };
         });
         // Keep display coordinates before buildShot's goal-height ground projection.
-        this.effectiveAim = { points: aimed, finger: { ...point } };
+        this.effectiveAim = { points: aimed, path: buildVisualPath(aimed), finger: { ...point } };
       }
       this.shot = buildShot(aimed, this.chip, this.context.physics, this.power);
       this.route = this.shot?.route || null;
@@ -214,7 +221,7 @@
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
         this.gestureStart = { ...input.point }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
         this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0; this.effectiveAim = null;
-        if (this.touchAim) this.effectiveAim = { points: this.points, finger: { ...input.point } };
+        if (this.touchAim) this.effectiveAim = { points: this.points, path: buildVisualPath(this.points), finger: { ...input.point } };
         return { handled: true, capture: true, updateOnRelease: !this.touchAim };
       }
       if (!this.points) return { handled: false };
@@ -264,6 +271,7 @@
     }
   }
   DrawShotController.buildRoute = buildRoute;
+  DrawShotController.buildVisualPath = buildVisualPath;
   DrawShotController.buildShot = buildShot;
   DrawShotController.pointAt = pointAt;
   DrawShotController.create = context => {
