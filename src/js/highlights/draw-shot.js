@@ -164,7 +164,7 @@
         help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
           detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The short solid line estimates early flight; the dashed line shows its ground shadow. AIM marks your intended target. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
-        aimCursor: c.flow.state === State.AIMING && this.points && this.drawing ? this.aimCursor : null,
+        aimCursor: c.flow.state === State.AIMING && this.points ? this.aimCursor : null,
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
     sample(point) {
@@ -174,14 +174,23 @@
       this.points.push({ ...point });
       let aimed = this.points;
       if (this.touchAim) {
-        const scale = this.context.view.scale, start = this.points[0];
+        const view = this.context.view, scale = view.scale, start = this.points[0];
         this.liftDistance = Math.max(this.liftDistance, distance(this.gestureStart, point) * scale);
-        const t = clamp(this.liftDistance / 90, 0, 1), lift = 55 * t * t * (3 - 2 * t) / scale;
+        const t = clamp(this.liftDistance / 70, 0, 1), lift = 95 * t * t * (3 - 2 * t) / scale;
+        const margin = 14, top = view.height < 500 ? 60 : 80;
+        const cursor = {
+          x: clamp(point.x, (margin - view.x) / scale, (view.width - margin - view.x) / scale),
+          y: clamp(point.y - lift, Math.max((top - view.y) / scale, goalGeometry().bottom - GOAL.height * 2 * HEIGHT_PROJECTION), (view.height - margin - view.y) / scale)
+        };
+        const shiftX = cursor.x - point.x, shiftY = cursor.y - point.y;
         const dx = point.x - start.x, dy = point.y - start.y, squared = dx * dx + dy * dy;
-        // Lift the whole stroke by its progress toward the endpoint, anchored at the
-        // ball. Straight strokes stay straight; backtracking cannot amplify the lift.
-        aimed = this.points.map(p => ({ x: p.x, y: p.y - lift * (squared ? clamp(((p.x - start.x) * dx + (p.y - start.y) * dy) / squared, 0, 1) : 0) }));
-        this.aimCursor = { ...aimed.at(-1), finger: { ...point } };
+        // Apply the visible endpoint's lift and bounds to the whole stroke, anchored
+        // at the ball. Straight strokes stay straight, including near screen edges.
+        aimed = this.points.map(p => {
+          const progress = squared ? clamp(((p.x - start.x) * dx + (p.y - start.y) * dy) / squared, 0, 1) : 0;
+          return { x: p.x + shiftX * progress, y: p.y + shiftY * progress };
+        });
+        this.aimCursor = { ...cursor, finger: { ...point } };
       }
       this.shot = buildShot(aimed, this.chip, this.context.physics, this.power);
       this.route = this.shot?.route || null;
@@ -199,6 +208,7 @@
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
         this.gestureStart = { ...input.point }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
         this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0; this.aimCursor = null;
+        if (this.touchAim) this.aimCursor = { x: c.ball.x, y: c.ball.y, finger: { ...input.point } };
         return { handled: true, capture: true, updateOnRelease: !this.touchAim };
       }
       if (!this.points) return { handled: false };

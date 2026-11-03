@@ -1458,14 +1458,15 @@ test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or movi
     const touch=p=>({...defensePointer(g,p),pointerType:'touch'});
     g.onPointerDown(touch(start));g.update(.4);
     g.onPointerMove(touch({x:start.x,y:start.y-3/scale}));
-    assert.equal(g.controller.drawing,false);assert.equal(g.controllerPresentation().aimCursor,null);
-    for(const pixels of [8.1,45,90]) {
+    assert.equal(g.controller.drawing,false);
+    assert.equal(g.controllerPresentation().aimCursor.x,start.x);assert.equal(g.controllerPresentation().aimCursor.y,start.y);
+    for(const pixels of [8.1,35,70]) {
       g.onPointerMove(touch({x:start.x,y:start.y-pixels/scale}));
-      const cursor=g.controllerPresentation().aimCursor,t=Math.min(pixels/90,1);
-      assert.ok(Math.abs((cursor.finger.y-cursor.y)*scale-55*t*t*(3-2*t))<1e-8);
+      const cursor=g.controllerPresentation().aimCursor,t=Math.min(pixels/70,1);
+      assert.ok(Math.abs((cursor.finger.y-cursor.y)*scale-95*t*t*(3-2*t))<1e-8);
       if(g.controller.shot) {assert.equal(g.controller.shot.spin,0);assert.equal(g.controller.route.start.y,start.y);}
     }
-    const end={x:415,y:84-90*.52+55/scale};
+    const end={x:415,y:84-90*.52+95/scale};
     // Start a fresh straight stroke toward the corner after checking the lift ramp.
     g.cancelPointer(g.pointer.id);g.onPointerDown(touch(start));g.update(.4);
     for(let i=1;i<=30;i++) {
@@ -1484,12 +1485,36 @@ test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or movi
   }
 });
 
+test('Draw the Shot keeps the lifted cursor and computed target inside the same visible bounds', () => {
+  for(const [width,height] of [[390,844],[844,390]]) for(const edge of ['top','left','right','bottom']) {
+    const {game:g}=fixture(width,height);g.startPractice(10);g.update(.9);
+    const start={x:g.ball.x,y:g.ball.y},v=g.view;
+    const end={x:edge==='left'?(-100-v.x)/v.scale:edge==='right'?(width+100-v.x)/v.scale:start.x,
+      y:((edge==='bottom'?height+100:-100)-v.y)/v.scale};
+    const event=p=>({...defensePointer(g,p),pointerType:'touch'});
+    g.onPointerDown(event(start));
+    for(let i=1;i<=20;i++) {
+      const t=i/20;g.onPointerMove(event({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t}));
+    }
+    const c=g.controller,cursor=c.getPresentation().aimCursor;
+    assert.ok(v.x+cursor.x*v.scale>=14-1e-8&&v.x+cursor.x*v.scale<=width-14+1e-8);
+    assert.ok(v.y+cursor.y*v.scale>=(height<500?60:80)-1e-8&&v.y+cursor.y*v.scale<=height-14+1e-8);
+    if(edge!=='bottom') {
+      const shot=c.shot;assert.ok(shot);assert.equal(shot.spin,0);
+      assert.equal(shot.route.start.x,start.x);assert.equal(shot.route.start.y,start.y);
+      assert.ok(Math.abs(shot.target.x-cursor.x)<1e-8);
+      assert.ok(Math.abs(shot.target.y-shot.target.z*.52-cursor.y)<1e-8);
+      g.onPointerUp(event(start));assert.equal(c.shot,shot);assert.equal(g.state,'BALL_IN_MOTION');
+    } else {g.cancelPointer(g.pointer.id);assert.equal(g.state,'AIMING');}
+  }
+});
+
 test('Draw the Shot keeps touch curves, mouse coordinates and cancellation independent', () => {
   for(const pointerType of ['touch','mouse']) for(const bend of [-45,45]) {
     const {game:g}=fixture(390,844);g.startPractice(10);g.update(.9);
     const start={x:g.ball.x,y:g.ball.y},scale=g.view.scale;
     const event=p=>({...defensePointer(g,p),pointerType});
-    const end={x:500,y:84+(pointerType==='touch'?55/scale:0)};
+    const end={x:500,y:84+(pointerType==='touch'?95/scale:0)};
     g.onPointerDown(event(start));
     for(let i=1;i<=30;i++) {
       const t=i/30;g.onPointerMove(event({x:start.x+(end.x-start.x)*t+bend*Math.sin(Math.PI*t),y:start.y+(end.y-start.y)*t}));
