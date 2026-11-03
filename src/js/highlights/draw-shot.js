@@ -142,6 +142,7 @@
     constructor(context) {
       super(context); this.points = null; this.route = null; this.travel = 0; this.chip = false; this.shot = null;
       this.power = .6; this.holdTime = 0; this.drawing = false; this.gestureStart = null; this.tutorialTime = 0;
+      this.touchAim = false; this.liftDistance = 0; this.aimCursor = null;
     }
     enter() {
       this.tutorialTime = this.context.memory.powerTutorialSeen ? 0 : 5;
@@ -163,6 +164,7 @@
         help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
           detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The short solid line estimates early flight; the dashed line shows its ground shadow. AIM marks your intended target. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
+        aimCursor: c.flow.state === State.AIMING && this.points && this.drawing ? this.aimCursor : null,
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
     sample(point) {
@@ -170,7 +172,18 @@
       if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) { this.cancelInput(); return; }
       if (distance(this.points.at(-1), point) < .001) return;
       this.points.push({ ...point });
-      this.shot = buildShot(this.points, this.chip, this.context.physics, this.power);
+      let aimed = this.points;
+      if (this.touchAim) {
+        const scale = this.context.view.scale, start = this.points[0];
+        this.liftDistance = Math.max(this.liftDistance, distance(this.gestureStart, point) * scale);
+        const t = clamp(this.liftDistance / 90, 0, 1), lift = 55 * t * t * (3 - 2 * t) / scale;
+        const dx = point.x - start.x, dy = point.y - start.y, squared = dx * dx + dy * dy;
+        // Lift the whole stroke by its progress toward the endpoint, anchored at the
+        // ball. Straight strokes stay straight; backtracking cannot amplify the lift.
+        aimed = this.points.map(p => ({ x: p.x, y: p.y - lift * (squared ? clamp(((p.x - start.x) * dx + (p.y - start.y) * dy) / squared, 0, 1) : 0) }));
+        this.aimCursor = { ...aimed.at(-1), finger: { ...point } };
+      }
+      this.shot = buildShot(aimed, this.chip, this.context.physics, this.power);
       this.route = this.shot?.route || null;
     }
     handleInput(input) {
@@ -185,10 +198,13 @@
         if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
         this.gestureStart = { ...input.point }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
-        return { handled: true, capture: true, updateOnRelease: true };
+        this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0; this.aimCursor = null;
+        return { handled: true, capture: true, updateOnRelease: !this.touchAim };
       }
       if (!this.points) return { handled: false };
-      if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y)) { this.cancelInput(); return { handled: true }; }
+      const touchRelease = this.touchAim && input.type === 'up';
+      if (touchRelease && !this.drawing) { this.cancelInput(); return { handled: true }; }
+      if (!touchRelease && (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y))) { this.cancelInput(); return { handled: true }; }
       if (!this.drawing) {
         if (distance(input.point, this.gestureStart) < 8 / c.view.scale) {
           if (input.type === 'up') this.cancelInput();
@@ -196,7 +212,7 @@
         }
         this.drawing = true;
       }
-      this.sample(input.point);
+      if (!touchRelease) this.sample(input.point);
       if (input.type === 'up') {
         this.points = null;
         if (!this.route) { c.feedback.toast('Draw a longer path toward goal.', 1.5); return { handled: true }; }
@@ -208,6 +224,7 @@
     }
     cancelInput() {
       this.points = null; this.route = null; this.shot = null; this.gestureStart = null;
+      this.touchAim = false; this.liftDistance = 0; this.aimCursor = null;
       this.holdTime = 0; this.power = .6; this.drawing = false; this.context.feedback.power(0);
     }
     update(dt) {

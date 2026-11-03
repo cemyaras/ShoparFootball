@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { runtimeScripts } = require('./helpers/runtime.cjs');
 
-function headless() {
+function headless(presentation = {}) {
   const window = {};
   for (const { source, filename } of runtimeScripts().filter(s => /\/(core|physics|renderer)\.js$|\/highlights\/controller\.js$/.test(s.filename))) vm.runInNewContext(source, { window }, { filename });
   const { Core, Physics, Controllers, CanvasRenderer } = window.ShoparFootball;
@@ -25,7 +25,7 @@ function headless() {
     get ball() { return world.ball; }, get resolution() { return world.resolution; }, get aim() { return world.aim; }, get contact() { return world.contact; },
     trail: world.trail, ripples: world.ripples, particles: world.particles, crowd: [], excited: false, netWobble: .3, shake: 1, flash: .1, reducedMotion: false, banner: null,
     environment: Object.freeze({ pitch: 'stadium', palette: { outside: '#123', line: '#fff' }, drawRunoff() {}, drawSurface() {}, drawAtmosphere() { log.push(['atmosphere']); } }),
-    actorPose: actor => Controllers.actorPose(context, actor), presentation: () => ({}), drawWorld: () => log.push(['world']), drawOverlay: () => log.push(['overlay']),
+    actorPose: actor => Controllers.actorPose(context, actor), presentation: () => presentation, drawWorld: () => log.push(['world']), drawOverlay: () => log.push(['overlay']),
     geometry: Object.freeze({ playerScale: p => Core.playerScale(p), ballGeometry: b => Core.ballGeometry(b), goalGeometry: () => Core.goalGeometry(), maxDrag: () => 150, contactGeometry: () => ({ x: 500, y: 370, r: 100 }) }),
     physics: Object.freeze({ kickVelocity: Physics.kickVelocity, integrateBall(b, dt) { assert.notEqual(b, world.ball); previewSteps++; return Physics.integrateBall(b, dt); } }) });
   return { Core, Controllers, CanvasRenderer, renderer: new CanvasRenderer(scene), scene, world, log,
@@ -63,6 +63,14 @@ test('CanvasRenderer preserves world/contact/screen layer ordering and the viewp
   assert.ok(log.some(call => JSON.stringify(call) === JSON.stringify(['translate', 40, 50])));
   assert.ok(log.some(call => JSON.stringify(call) === JSON.stringify(['scale', .8, .8])));
   assert.equal(names[names.indexOf('overlay') - 1], 'restore', 'screen hooks follow world-transform restoration');
+});
+
+test('CanvasRenderer draws a CSS-sized lifted cursor and finger connector without mutating presentation', () => {
+  const presentation=freeze({aimCursor:{x:415,y:37.2,finger:{x:415,y:105.95}},shotTarget:{x:415,y:84,z:90,label:'AIM HIGH'}});
+  const h=headless(presentation),before=JSON.stringify(presentation);freeze(h.world);h.renderer.render();
+  assert.equal(JSON.stringify(presentation),before);
+  assert.ok(h.log.some(call=>call[0]==='moveTo'&&call[1]===415&&call[2]===105.95));
+  assert.ok(h.log.some(call=>call[0]==='arc'&&call[1]===415&&call[2]===37.2&&call[3]===5/.8));
 });
 
 test('shared pose data resolves controlled, running, kick, tackle and keeper save presentation without drawing', () => {

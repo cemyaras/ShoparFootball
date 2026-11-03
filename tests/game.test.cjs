@@ -1450,6 +1450,75 @@ test('Draw the Shot holds to charge, ignores jitter and locks power throughout o
   g.cancelPointer(g.pointer.id);assert.equal(g.controller.power,.6);assert.equal(g.controllerPresentation().shotPower,null);assert.equal(g.state,'AIMING');
 });
 
+test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or moving the release target', () => {
+  for (const [width,height,dpr] of [[390,844,1],[844,390,3]]) {
+    const {game:g,window}=fixture(width,height); window.devicePixelRatio=dpr;
+    g.startPractice(10);g.update(.9);g.resize();
+    const start={x:g.ball.x,y:g.ball.y},scale=g.view.scale;
+    const touch=p=>({...defensePointer(g,p),pointerType:'touch'});
+    g.onPointerDown(touch(start));g.update(.4);
+    g.onPointerMove(touch({x:start.x,y:start.y-3/scale}));
+    assert.equal(g.controller.drawing,false);assert.equal(g.controllerPresentation().aimCursor,null);
+    for(const pixels of [8.1,45,90]) {
+      g.onPointerMove(touch({x:start.x,y:start.y-pixels/scale}));
+      const cursor=g.controllerPresentation().aimCursor,t=Math.min(pixels/90,1);
+      assert.ok(Math.abs((cursor.finger.y-cursor.y)*scale-55*t*t*(3-2*t))<1e-8);
+      if(g.controller.shot) {assert.equal(g.controller.shot.spin,0);assert.equal(g.controller.route.start.y,start.y);}
+    }
+    const end={x:415,y:84-90*.52+55/scale};
+    // Start a fresh straight stroke toward the corner after checking the lift ramp.
+    g.cancelPointer(g.pointer.id);g.onPointerDown(touch(start));g.update(.4);
+    for(let i=1;i<=30;i++) {
+      const t=i/30;g.onPointerMove(touch({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t}));
+    }
+    const c=g.controller,shot=c.shot,cursor=g.controllerPresentation().aimCursor;
+    assert.ok(Math.abs(cursor.x-415)<1e-8&&Math.abs(cursor.y-(84-90*.52))<1e-8);
+    assert.ok(Math.abs(shot.target.z-90)<1e-8);assert.ok(Math.abs(shot.target.x-cursor.x)<1e-8);
+    assert.equal(shot.spin,0);assert.ok(Math.abs(c.power-.8)<1e-8);
+    g.update(.6);assert.ok(Math.abs(c.power-.8)<1e-8);
+    g.onPointerUp(touch({x:end.x+20/scale,y:end.y+30/scale}));
+    assert.equal(g.state,'BALL_IN_MOTION');assert.equal(c.shot,shot);assert.equal(g.pointer,null);
+    assert.equal(g.controllerPresentation().aimCursor,null);
+    assert.ok(Math.abs(g.ball.vx-Math.cos(shot.heading)*shot.speed)<1e-8);
+    assert.ok(Math.abs(g.ball.vy-Math.sin(shot.heading)*shot.speed)<1e-8);
+  }
+});
+
+test('Draw the Shot keeps touch curves, mouse coordinates and cancellation independent', () => {
+  for(const pointerType of ['touch','mouse']) for(const bend of [-45,45]) {
+    const {game:g}=fixture(390,844);g.startPractice(10);g.update(.9);
+    const start={x:g.ball.x,y:g.ball.y},scale=g.view.scale;
+    const event=p=>({...defensePointer(g,p),pointerType});
+    const end={x:500,y:84+(pointerType==='touch'?55/scale:0)};
+    g.onPointerDown(event(start));
+    for(let i=1;i<=30;i++) {
+      const t=i/30;g.onPointerMove(event({x:start.x+(end.x-start.x)*t+bend*Math.sin(Math.PI*t),y:start.y+(end.y-start.y)*t}));
+    }
+    assert.equal(Math.sign(g.controller.shot.spin),-Math.sign(bend));
+    assert.ok(Math.abs(g.controller.shot.target.y-84)<1e-8);
+    assert.ok(Math.abs(g.controller.shot.target.z)<1e-8);
+    assert.equal(Boolean(g.controllerPresentation().aimCursor),pointerType==='touch');
+    if(pointerType==='mouse') {
+      g.onPointerUp(event({x:430,y:84}));
+      assert.equal(g.controller.shot.target.x,430);assert.equal(g.state,'BALL_IN_MOTION');
+    } else {g.cancelPointer(g.pointer.id);assert.equal(g.controller.shot,null);assert.equal(g.controllerPresentation().aimCursor,null);}
+  }
+  for(const reason of ['tap','cancel','blur','rotate']) {
+    const {game:g,window}=fixture(390,844);g.startPractice(10);g.update(.9);
+    const e={...defensePointer(g,g.ball),pointerType:'touch'};g.onPointerDown(e);
+    if(reason==='tap') g.onPointerUp({...e,clientY:e.clientY-100});
+    else {
+      g.onPointerMove({...e,clientY:e.clientY-100});assert.ok(g.controllerPresentation().aimCursor);
+      if(reason==='cancel')g.canvas.dispatchEvent({type:'pointercancel',pointerId:e.pointerId});
+      if(reason==='blur')window.dispatchEvent({type:'blur'});
+      if(reason==='rotate'){g.canvas.getBoundingClientRect=()=>({left:0,top:0,width:844,height:390});g.resize();}
+      g.onPointerUp(e);
+    }
+    assert.equal(g.state,'AIMING');assert.equal(g.pointer,null);assert.equal(g.controller.shot,null);
+    assert.equal(g.controllerPresentation().aimCursor,null);assert.equal(g.stats.goals+g.stats.misses,0);
+  }
+});
+
 test('Draw the Shot cycles six shooting positions across retry, restart and re-entry', () => {
   const {game:g}=fixture(),positions=[];
   for(let i=0;i<7;i++) {
