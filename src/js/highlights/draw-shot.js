@@ -174,7 +174,7 @@
         chipControl: this.context.flow.state === State.AIMING ? { active: this.chip, disabled: Boolean(this.points) } : null,
         help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
-          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. On touchscreens the solid line shows your aiming gesture, not the exact ball flight. With a mouse the short solid line estimates early flight; the dashed line shows its ground shadow. The target marks your intended aim. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
+          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The solid line and AIM marker show your aiming intention, not the exact ball flight. On touchscreens the aim lifts above your finger. Release shoots using your last aim. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
         aimingPath: c.flow.state === State.AIMING && this.points ? this.effectiveAim?.path || null : null,
         aimCursor: c.flow.state === State.AIMING && this.points ? this.aimCursor : null,
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
@@ -202,10 +202,10 @@
           const progress = squared ? clamp(((p.x - start.x) * dx + (p.y - start.y) * dy) / squared, 0, 1) : 0;
           return { x: p.x + shiftX * progress, y: p.y + shiftY * progress };
         });
-        // Keep display coordinates before buildShot's goal-height ground projection.
-        this.effectiveAim = { points: aimed, path: buildVisualPath(aimed), finger: { ...point } };
       }
-      this.shot = buildShot(aimed, this.chip, this.context.physics, this.power);
+      // Both inputs share display coordinates before buildShot's goal-height projection.
+      this.effectiveAim = { points: aimed, path: buildVisualPath(aimed), finger: this.touchAim ? { ...point } : null };
+      this.shot = buildShot(this.effectiveAim.points, this.chip, this.context.physics, this.power);
       this.route = this.shot?.route || null;
     }
     handleInput(input) {
@@ -220,22 +220,20 @@
         if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
         this.gestureStart = { ...input.point }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
-        this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0; this.effectiveAim = null;
-        if (this.touchAim) this.effectiveAim = { points: this.points, path: buildVisualPath(this.points), finger: { ...input.point } };
-        return { handled: true, capture: true, updateOnRelease: !this.touchAim };
+        this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0;
+        this.effectiveAim = { points: this.points, path: buildVisualPath(this.points), finger: this.touchAim ? { ...input.point } : null };
+        return { handled: true, capture: true, updateOnRelease: false };
       }
       if (!this.points) return { handled: false };
-      const touchRelease = this.touchAim && input.type === 'up';
-      if (touchRelease && !this.drawing) { this.cancelInput(); return { handled: true }; }
-      if (!touchRelease && (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y))) { this.cancelInput(); return { handled: true }; }
+      const release = input.type === 'up';
+      // Release commits the last visible aim; lifting must never add an unseen sample.
+      if (release && !this.drawing) { this.cancelInput(); return { handled: true }; }
+      if (!release && (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y))) { this.cancelInput(); return { handled: true }; }
       if (!this.drawing) {
-        if (distance(input.point, this.gestureStart) < 8 / c.view.scale) {
-          if (input.type === 'up') this.cancelInput();
-          return { handled: true };
-        }
+        if (distance(input.point, this.gestureStart) < 8 / c.view.scale) return { handled: true };
         this.drawing = true;
       }
-      if (!touchRelease) this.sample(input.point);
+      if (!release) this.sample(input.point);
       if (input.type === 'up') {
         this.points = null;
         if (!this.route) { c.feedback.toast('Draw a longer path toward goal.', 1.5); return { handled: true }; }

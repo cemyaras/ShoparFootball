@@ -46,6 +46,7 @@
       const game = this.game;
       if (!game.pointer || e.pointerId !== game.pointer.id) return;
       e.preventDefault(); const p = game.toWorld(e), start = game.pointer.start, pointerType = game.pointer.pointerType;
+      // Controllers choose whether release resamples or commits their last aim.
       if (game.pointer.updateOnRelease) game.onPointerMove(e);
       game.releasePointer();
       game.controller?.handleInput({ type: 'up', point: p, start, pointerId: e.pointerId, pointerType });

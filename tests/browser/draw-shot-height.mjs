@@ -74,7 +74,7 @@ try {
     }
     await evaluate('footballGame.startPractice(10)'); await until("footballGame.state==='AIMING'");
     await tap('help-button',mobile);
-    check(await evaluate("document.getElementById('help-detail').textContent.includes('dashed line')&&document.getElementById('help-guide').textContent.includes('CHIP')"), 'Drawing help explains height and shadow');
+    check(await evaluate("document.getElementById('help-detail').textContent.includes('aiming intention')&&document.getElementById('help-detail').textContent.includes('last aim')&&document.getElementById('help-guide').textContent.includes('CHIP')"), 'Drawing help explains shared intent, release and height');
     await tap('help-done',mobile);
     await evaluate('footballGame.startPractice(0)'); await until("footballGame.state==='AIMING'");
     check(await evaluate("getComputedStyle(document.getElementById('chip-button')).display==='none'"), 'CHIP absent from original highlight');

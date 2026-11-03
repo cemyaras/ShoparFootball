@@ -1529,7 +1529,7 @@ test('Draw the Shot keeps the lifted cursor and computed target inside the same 
   }
 });
 
-test('Draw the Shot keeps touch curves, mouse coordinates and cancellation independent', () => {
+test('Draw the Shot shares visual curves while preserving mouse coordinates and cancelling either input', () => {
   for(const pointerType of ['touch','mouse']) for(const bend of [-45,45]) {
     const {game:g}=fixture(390,844);g.startPractice(10);g.update(.9);
     const start={x:g.ball.x,y:g.ball.y},scale=g.view.scale;
@@ -1542,17 +1542,19 @@ test('Draw the Shot keeps touch curves, mouse coordinates and cancellation indep
     assert.equal(Math.sign(g.controller.shot.spin),-Math.sign(bend));
     assert.ok(Math.abs(g.controller.shot.target.y-84)<1e-8);
     assert.ok(Math.abs(g.controller.shot.target.z)<1e-8);
-    assert.equal(Boolean(g.controllerPresentation().aimCursor),pointerType==='touch');
-    if(pointerType==='touch')assertTouchAim(g);
-    else assert.equal(g.controllerPresentation().aimingPath,null);
+    assert.ok(g.controllerPresentation().aimCursor);
+    assertTouchAim(g);
+    assert.equal(Boolean(g.controllerPresentation().aimCursor.finger),pointerType==='touch');
+    if(pointerType==='mouse')assert.equal(JSON.stringify(g.controller.effectiveAim.points),JSON.stringify(g.controller.points));
     if(pointerType==='mouse') {
+      const shot=g.controller.shot;
       g.onPointerUp(event({x:430,y:84}));
-      assert.equal(g.controller.shot.target.x,430);assert.equal(g.state,'BALL_IN_MOTION');
+      assert.equal(g.controller.shot,shot);assert.equal(g.controller.shot.target.x,500);assert.equal(g.state,'BALL_IN_MOTION');
     } else {g.cancelPointer(g.pointer.id);assert.equal(g.controller.shot,null);assert.equal(g.controllerPresentation().aimCursor,null);}
   }
-  for(const reason of ['tap','cancel','blur','rotate']) {
+  for(const pointerType of ['mouse','touch']) for(const reason of ['tap','cancel','blur','rotate']) {
     const {game:g,window}=fixture(390,844);g.startPractice(10);g.update(.9);
-    const e={...defensePointer(g,g.ball),pointerType:'touch'};g.onPointerDown(e);
+    const e={...defensePointer(g,g.ball),pointerType};g.onPointerDown(e);
     if(reason==='tap') g.onPointerUp({...e,clientY:e.clientY-100});
     else {
       g.onPointerMove({...e,clientY:e.clientY-100});assert.ok(g.controllerPresentation().aimCursor);
@@ -1564,6 +1566,60 @@ test('Draw the Shot keeps touch curves, mouse coordinates and cancellation indep
     assert.equal(g.state,'AIMING');assert.equal(g.pointer,null);assert.equal(g.controller.shot,null);
     assert.equal(g.controllerPresentation().aimCursor,null);assert.equal(g.stats.goals+g.stats.misses,0);
     assert.equal(g.controllerPresentation().aimingPath,null);
+  }
+});
+
+test('Draw the Shot produces identical paths, shots and flight from identical effective mouse and touch aims', () => {
+  for(const [width,height] of [[390,844],[844,390]]) {
+    for(const [drag,bend,targetHeight,chip,power] of [[8.1,0,0,false,.6],[35,0,0,false,.6],[300,0,0,false,.6],
+      [300,-18,0,false,.8],[300,45,0,false,1],[300,0,90,false,.8],[300,-30,90,true,.8]]) {
+      const {game:touch}=fixture(width,height),{game:mouse}=fixture(width,height);
+      for(const g of [touch,mouse]){g.startPractice(10);g.update(.9);g.controller.chip=chip;}
+      const start={x:touch.ball.x,y:touch.ball.y},scale=touch.view.scale;
+      const end=drag<300?{x:start.x,y:start.y-drag/scale}:{x:500,y:84-targetHeight*.52+95/scale};
+      const event=(g,p,pointerType)=>({...defensePointer(g,p),pointerType});
+      touch.onPointerDown(event(touch,start,'touch'));touch.update((power-.6)*2);
+      for(let i=1;i<=30;i++) {
+        const t=i/30;
+        touch.onPointerMove(event(touch,{x:start.x+(end.x-start.x)*t+bend*Math.sin(Math.PI*t),y:start.y+(end.y-start.y)*t},'touch'));
+      }
+      // Replay the normalized stroke to the mouse. Only input normalization may differ.
+      const points=touch.controller.effectiveAim.points.map(p=>({...p}));
+      mouse.onPointerDown(event(mouse,start,'mouse'));mouse.update((power-.6)*2);
+      for(const p of points.slice(1))mouse.controller.handleInput({type:'move',point:p,pointerType:'mouse'});
+      for(const g of [touch,mouse]) {
+        assertTouchAim(g);
+        assert.equal(g.pointer.updateOnRelease,false);
+        assert.ok(Math.abs(g.controller.power-power)<1e-8);
+        const expected=g.controller.constructor.buildShot(g.controller.effectiveAim.points,chip,g.controller.context.physics,g.controller.power);
+        assert.equal(JSON.stringify(g.controller.shot),JSON.stringify(expected));
+      }
+      assert.equal(JSON.stringify(mouse.controller.effectiveAim.points),JSON.stringify(touch.controller.effectiveAim.points));
+      assert.equal(JSON.stringify(mouse.controllerPresentation().aimingPath),JSON.stringify(touch.controllerPresentation().aimingPath));
+      assert.equal(JSON.stringify(mouse.controller.shot),JSON.stringify(touch.controller.shot));
+      const shot=mouse.controller.shot;
+      if(drag===8.1) {
+        assert.equal(shot,null);
+        for(const [g,pointerType] of [[touch,'touch'],[mouse,'mouse']]) {
+          g.onPointerUp(event(g,{x:430,y:84},pointerType));
+          assert.equal(g.state,'AIMING');assert.equal(g.kick,null);assert.equal(g.pointer,null);
+        }
+        continue;
+      }
+      assert.ok(shot);
+      for(const [g,pointerType] of [[touch,'touch'],[mouse,'mouse']]) {
+        const before=g.controller.shot;
+        g.render();g.onPointerUp(event(g,{x:430,y:84},pointerType));
+        assert.equal(g.controller.shot,before);assert.equal(g.state,'BALL_IN_MOTION');assert.equal(g.pointer,null);
+        assert.equal(g.controllerPresentation().aimingPath,null);assert.equal(g.controllerPresentation().aimCursor,null);
+      }
+      assert.equal(JSON.stringify(mouse.ball),JSON.stringify(touch.ball));
+      for(let i=0;i<120;i++) {
+        mouse.update(1/120);touch.update(1/120);
+        assert.equal(JSON.stringify(mouse.ball),JSON.stringify(touch.ball));
+        assert.equal(mouse.state,touch.state);
+      }
+    }
   }
 });
 

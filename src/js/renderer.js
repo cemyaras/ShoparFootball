@@ -90,8 +90,11 @@
       }
       if (cursor) {
         const unit = 1 / v.scale;
-        c.save(); c.strokeStyle = '#e5ffc055'; c.lineWidth = unit; c.setLineDash([2 * unit, 4 * unit]);
-        c.beginPath(); c.moveTo(cursor.finger.x, cursor.finger.y); c.lineTo(cursor.x, cursor.y); c.stroke(); c.setLineDash([]);
+        c.save();
+        if (cursor.finger) {
+          c.strokeStyle = '#e5ffc055'; c.lineWidth = unit; c.setLineDash([2 * unit, 4 * unit]);
+          c.beginPath(); c.moveTo(cursor.finger.x, cursor.finger.y); c.lineTo(cursor.x, cursor.y); c.stroke(); c.setLineDash([]);
+        }
         c.beginPath(); c.arc(cursor.x, cursor.y, 5 * unit, 0, Math.PI * 2);
         c.moveTo(cursor.x - 10 * unit, cursor.y); c.lineTo(cursor.x - 3 * unit, cursor.y);
         c.moveTo(cursor.x + 3 * unit, cursor.y); c.lineTo(cursor.x + 10 * unit, cursor.y);

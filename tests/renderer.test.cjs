@@ -85,6 +85,19 @@ test('CanvasRenderer keeps mouse flight preview, height projection and target la
   assert.ok(h.log.some(call=>call[0]==='fillText'&&call[1]==='AIM HIGH'));
 });
 
+test('CanvasRenderer uses the same intent path and cursor for mouse without a finger connector', () => {
+  const path=[{x:512,y:377},{x:470,y:200},{x:415,y:37.2}];
+  const presentation=freeze({aimingPath:path,aimCursor:{...path.at(-1),finger:null},
+    shotTarget:{x:415,y:84,z:90,label:'AIM HIGH'},shotPreview:[{x:512,y:377,z:0},{x:9876,y:6543,z:20}]});
+  const h=headless(presentation),before=JSON.stringify(presentation);freeze(h.world);h.renderer.render();
+  assert.equal(JSON.stringify(presentation),before);
+  for(const p of path.slice(1))assert.ok(h.log.some(call=>call[0]==='lineTo'&&call[1]===p.x&&call[2]===p.y));
+  assert.ok(h.log.some(call=>call[0]==='arc'&&call[1]===415&&call[2]===37.2&&call[3]===5/.8));
+  assert.ok(!h.log.some(call=>call[0]==='lineTo'&&call[1]===9876),'intent path hides the physical preview for mouse too');
+  assert.ok(!h.log.some(call=>call[0]==='fillText'&&call[1]==='AIM HIGH'),'mouse uses the shared crosshair');
+  assert.ok(!h.log.some(call=>call[0]==='setLineDash'&&call[1]?.[0]===2/.8&&call[1]?.[1]===4/.8),'mouse does not draw a finger connector');
+});
+
 test('shared pose data resolves controlled, running, kick, tackle and keeper save presentation without drawing', () => {
   const { Controllers, world } = headless(), context = { flow: { state: 'DEFENDING' }, play: world.play };
   const actor = world.player; actor.step = 2; actor.celebration = 1;
