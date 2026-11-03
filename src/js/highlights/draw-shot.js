@@ -5,6 +5,14 @@
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const SAMPLE_DISTANCE = 8;
   const MIN_RADIUS = 24;
+  const POSITIONS = [
+    { player: [500, 365], defender: [530, 235] },
+    { player: [360, 400], defender: [455, 255] },
+    { player: [640, 400], defender: [545, 255] },
+    { player: [500, 300], defender: [530, 205] },
+    { player: [410, 470], defender: [490, 300] },
+    { player: [590, 470], defender: [525, 300] }
+  ];
   function resample(points, spacing) {
     const result = [{ ...points[0] }];
     let next = spacing, walked = 0;
@@ -33,7 +41,7 @@
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
       angle: Math.atan2(b.y - a.y, b.x - a.x) };
   }
-  function buildRoute(points, power = .6) {
+  function buildRoute(points) {
     if (points.length < 2 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
     const start = points[0], end = points.at(-1);
     if (distance(start, end) < 24 || end.y >= start.y - 12) return null;
@@ -50,8 +58,7 @@
       weightedOffset += basis * (-x * dy + y * dx);
       weight += basis * basis;
     }
-    const charge = (clamp(power, .6, 1) - .6) / .4;
-    const limit = Math.min(span * .45, span * span / (4 * MIN_RADIUS), 160) * (1 - .5 * charge);
+    const limit = Math.min(span * .45, span * span / (4 * MIN_RADIUS), 160);
     let bend = weight ? clamp(weightedOffset / weight, -limit, limit) : 0;
     if (Math.abs(bend) < Math.max(6, span * .02)) bend = 0;
     const control = { x: (start.x + end.x) / 2 - dy * bend, y: (start.y + end.y) / 2 + dx * bend };
@@ -65,17 +72,27 @@
     const length = lengths.at(-1);
     return { start: { ...start }, preview, lengths, length,
       heading: Math.atan2(preview[1].y - start.y, preview[1].x - start.x),
-      speed: clamp(400 + .65 * span, 430, 700) * (1 + .25 * charge) };
+      speed: clamp(400 + .65 * span, 430, 700) };
   }
-  function advanceRoute(physics, route, state, ball, dt) {
+  function turnShot(ball, spin, dt) {
+    const speed = Math.hypot(ball.vx, ball.vy);
+    const angle = spin * 1.8 * Math.min(1.3, 600 / Math.max(300, speed)) * dt;
+    const cos = Math.cos(angle), sin = Math.sin(angle), vx = ball.vx;
+    ball.vx = vx * cos - ball.vy * sin; ball.vy = vx * sin + ball.vy * cos;
+  }
+  function advanceShot(physics, ball, dt) {
     const steps = Math.max(1, Math.ceil(dt * 240)), step = dt / steps;
     let impact = null;
     for (let i = 0; i < steps; i++) {
-      const before = { x: ball.x, y: ball.y };
-      impact = physics.integrateBall(ball, step) || impact;
-      state.travel += distance(before, ball);
-      const p = pointAt(route, state.travel), speed = Math.hypot(ball.vx, ball.vy);
-      Object.assign(ball, { x: p.x, y: p.y, vx: Math.cos(p.angle) * speed, vy: Math.sin(p.angle) * speed });
+      const spin = ball.spin;
+      // Symmetric velocity turns keep the integration stable across frame sizes.
+      // Position, gravity, drag and bounce are all advanced by shared physics.
+      turnShot(ball, spin, step / 2);
+      ball.spin = 0; // Avoid applying the shared NSS spin model a second time.
+      const contact = physics.integrateBall(ball, step);
+      ball.spin = spin * Math.exp(-.65 * step) * (contact ? .65 : 1);
+      turnShot(ball, ball.spin, step / 2);
+      impact = contact || impact;
     }
     return impact;
   }
@@ -85,43 +102,41 @@
     const inGoal = end.x >= mouth.left - 24 && end.x <= mouth.right + 24 && end.y < mouth.bottom;
     const targetHeight = inGoal ? clamp((mouth.bottom - end.y) / HEIGHT_PROJECTION, 0, GOAL.height * 2) : 0;
     // Pointer coordinates describe the projected goal mouth. Keep x and drawing progress,
-    // but put the horizontal endpoint on the real goal line before solving vertical flight.
+    // but put the horizontal endpoint on the real goal line before interpreting intent.
     const ground = inGoal ? points.map(p => ({ x: p.x,
       y: p.y + (mouth.bottom - end.y) * clamp((start.y - p.y) / (start.y - end.y), 0, 1) })) : points;
-    const route = buildRoute(ground, power);
+    const route = buildRoute(ground);
     if (!route) return null;
-    const speed = route.speed * (chip ? .45 : 1);
-    let vz = 0;
-    if (chip || targetHeight > 6) {
-      // Measure travel time with the shared airborne drag, independent of gravity.
-      const probe = { x: 0, y: 0, z: 1, vx: speed, vy: 0, vz: 0, spin: 0, age: 0, rotation: 0 };
-      let time = 0;
-      while (probe.x < route.length && time < 6) {
-        const before = probe.x;
-        probe.z = 1; probe.vz = 0;
-        physics.integrateBall(probe, 1 / 240);
-        if (probe.x >= route.length) time += (route.length - before) / (probe.x - before) / 240;
-        else time += 1 / 240;
-      }
-      if (probe.x < route.length) return null;
-      vz = (targetHeight + .5 * BALL_GRAVITY * time * time) / time;
+    const charge = (clamp(power, .6, 1) - .6) / .4;
+    const referenceSpeed = route.speed * (chip ? .45 : 1), speed = referenceSpeed * (1 + .25 * charge);
+    const target = { x: end.x, y: inGoal ? FIELD.top : end.y, z: targetHeight };
+    const chord = Math.atan2(target.y - start.y, target.x - start.x);
+    const bend = Math.atan2(Math.sin(route.heading - chord), Math.cos(route.heading - chord));
+    const heading = chord + bend * .65;
+    const spin = Math.abs(bend) < .01 ? 0 : -clamp(bend / .73, -1, 1) * 1.1 * (1 - .55 * charge) * (chip ? .45 : 1);
+    const airborne = chip || targetHeight > 6;
+    // Height represents a neutral-power aiming reference, not a solved arrival condition.
+    const span = distance(start, target);
+    const probe = { x: 0, y: 0, z: 0, vx: referenceSpeed, vy: 0, vz: 0, spin: 0, age: 0, rotation: 0 };
+    let referenceTime = 0;
+    while (probe.x < span && referenceTime < 6) {
+      const before = probe.x;
+      probe.z = airborne ? 1 : 0; probe.vz = 0;
+      physics.integrateBall(probe, 1 / 240);
+      if (probe.x >= span) referenceTime += (span - before) / (probe.x - before) / 240;
+      else referenceTime += 1 / 240;
     }
-    const ball = { ...route.start, z: 0, vx: Math.cos(route.heading) * speed, vy: Math.sin(route.heading) * speed,
-      vz, spin: 0, age: 0, rotation: 0 }, state = { travel: 0 };
+    const vz = airborne ? (targetHeight + .5 * BALL_GRAVITY * referenceTime * referenceTime) / referenceTime : 0;
+    const ball = { ...route.start, z: 0, vx: Math.cos(heading) * speed, vy: Math.sin(heading) * speed,
+      vz, spin, age: 0, rotation: 0 };
     const preview = [{ x: ball.x, y: ball.y, z: 0, time: 0 }];
-    while (ball.age < 6) {
-      const previous = { ...ball };
-      advanceRoute(physics, route, state, ball, 1 / 120);
-      if (previous.y >= FIELD.top && ball.y < FIELD.top) {
-        const t = (previous.y - FIELD.top) / (previous.y - ball.y);
-        preview.push({ x: previous.x + (ball.x - previous.x) * t, y: FIELD.top,
-          z: previous.z + (ball.z - previous.z) * t, time: previous.age + (ball.age - previous.age) * t });
-        break;
-      }
+    const previewTime = clamp(referenceTime * .7 / (1 + .25 * charge), .18, 1.4);
+    while (ball.age < previewTime - 1e-9) {
+      advanceShot(physics, ball, Math.min(1 / 120, previewTime - ball.age));
       preview.push({ x: ball.x, y: ball.y, z: ball.z, time: ball.age });
-      if (ball.x < FIELD.left || ball.x > FIELD.right || ball.y > FIELD.bottom || Math.hypot(ball.vx, ball.vy) < 38) break;
+      if (ball.y < FIELD.top || ball.x < FIELD.left || ball.x > FIELD.right || ball.y > FIELD.bottom || Math.hypot(ball.vx, ball.vy) < 38) break;
     }
-    return { route, speed, vz, targetHeight, preview };
+    return { route, speed, vz, heading, spin, target, targetHeight, referenceTime, preview };
   }
   class DrawShotController extends window.ShoparFootball.AttackController {
     constructor(context) {
@@ -134,7 +149,7 @@
       super.enter();
     }
     getPresentation() {
-      const c = this.context, target = this.shot?.preview.at(-1);
+      const c = this.context, target = this.shot?.target;
       const aimedAtGoal = c.flow.state === State.AIMING && target && Math.abs(target.y - FIELD.top) < .01 && target.x >= FIELD.goalLeft && target.x <= FIELD.goalRight;
       const phase = c.ball.z < 5 ? 'GROUND' : c.ball.vz > 8 ? 'RISING' : c.ball.vz < -8 ? 'DROPPING' : 'AT THE TOP';
       return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw toward your target in the goal.' : 'Draw from the ball. Hold for power, draw to aim, release to shoot.') : '',
@@ -142,12 +157,12 @@
         shotPower: c.flow.state === State.AIMING && this.points ? { x: c.player.x,
           y: c.player.y - window.ShoparFootball.Core.SPRITES.playerHeight * window.ShoparFootball.Core.playerScale(c.player), value: this.power, locked: this.drawing } : null,
         shotTutorial: c.flow.state === State.AIMING && this.tutorialTime > 0 && !this.points ? ['HOLD FOR POWER', 'DRAW TO AIM', 'RELEASE TO SHOOT'] : null,
-        shotTarget: aimedAtGoal ? { ...target, label: target.z <= 6 ? 'GROUND' : target.z < GOAL.height * .65 ? 'MID' : 'HIGH' } : null,
+        shotTarget: aimedAtGoal ? { ...target, label: target.z <= 6 ? 'AIM GROUND' : target.z < GOAL.height * .65 ? 'AIM MID' : 'AIM HIGH' } : null,
         flightLabel: c.flow.state === State.BALL_IN_MOTION && !c.resolution ? `HEIGHT NOW · ${phase}` : null,
         chipControl: this.context.flow.state === State.AIMING ? { active: this.chip, disabled: Boolean(this.points) } : null,
         help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
-          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The solid line shows the flight; the dashed line shows its ground shadow. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
+          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The short solid line estimates early flight; the dashed line shows its ground shadow. AIM marks your intended target. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
     sample(point) {
@@ -185,10 +200,9 @@
       if (input.type === 'up') {
         this.points = null;
         if (!this.route) { c.feedback.toast('Draw a longer path toward goal.', 1.5); return { handled: true }; }
-        const r = this.route;
-        c.play.kick = { dx: Math.cos(r.heading), dy: Math.sin(r.heading), power: clamp((this.shot.speed - 220) / 530, 0, 1) };
+        c.play.kick = { dx: Math.cos(this.shot.heading), dy: Math.sin(this.shot.heading), power: clamp((this.shot.speed - 220) / 530, 0, 1) };
         this.travel = 0;
-        this.launchShot({ vx: Math.cos(r.heading) * this.shot.speed, vy: Math.sin(r.heading) * this.shot.speed, vz: this.shot.vz, spin: 0 });
+        this.launchShot({ vx: Math.cos(this.shot.heading) * this.shot.speed, vy: Math.sin(this.shot.heading) * this.shot.speed, vz: this.shot.vz, spin: this.shot.spin });
       }
       return { handled: true };
     }
@@ -210,11 +224,24 @@
     }
     integrateShot(dt) {
       if (this.context.resultDelay.pending || !this.route) return this.context.physics.integrateBall(this.context.ball, dt);
-      return advanceRoute(this.context.physics, this.route, this, this.context.ball, dt);
+      const before = { x: this.context.ball.x, y: this.context.ball.y };
+      const impact = advanceShot(this.context.physics, this.context.ball, dt);
+      this.travel += distance(before, this.context.ball);
+      return impact;
     }
   }
   DrawShotController.buildRoute = buildRoute;
   DrawShotController.buildShot = buildShot;
   DrawShotController.pointAt = pointAt;
+  DrawShotController.create = context => {
+    const index = context.memory.shotPosition ?? 0, position = POSITIONS[index % POSITIONS.length];
+    context.memory.shotPosition = (index + 1) % POSITIONS.length;
+    for (const [actor, point] of [[context.player, position.player], [context.defenders[0], position.defender]]) {
+      const [x, y] = point;
+      Object.assign(actor, { x, y, startX: x, startY: y, tx: x, ty: y });
+    }
+    Object.assign(context.ball, context.geometry.possessionPosition(context.player), { z: 0, vx: 0, vy: 0, vz: 0, spin: 0, age: 0 });
+    return new DrawShotController(context);
+  };
   window.ShoparFootball.DrawShotController = DrawShotController;
 })();

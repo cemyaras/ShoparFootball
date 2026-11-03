@@ -26,7 +26,7 @@ try {
   for(const [width,height,mobile] of [[1280,900,false],[390,844,true],[568,320,true]]) {
     await size(width,height,mobile);await send('Emulation.setTouchEmulationEnabled',{enabled:mobile,maxTouchPoints:1});await open(url);
     check(await evaluate("document.querySelectorAll('[data-highlight]').length===11&&document.getElementById('play-button').textContent.includes('10')"),'Catalog and Play All counts');
-    for(const [x,bend,kind] of [[415,40,'goal'],[420,0,'save'],[530,0,'blocked'],[800,0,'wide']]) {
+    for(const [x,bend,kind] of [[430,40,'goal'],[420,0,'save'],[530,0,'blocked'],[800,0,'wide']]) {
       await select(mobile);
       const start=await evaluate('({x:footballGame.ball.x,y:footballGame.ball.y})');
       await pointer('down',await world(start.x,start.y),mobile);
@@ -64,18 +64,19 @@ try {
     await pointer('up',await world(500,84),mobile);
     await until("footballGame.state==='BALL_IN_MOTION'");
     const follows=await evaluate(`(()=>{
-      const g=footballGame,c=g.controller,initial=g.state;cancelAnimationFrame(g.raf);let samples=0,error=0;
+      const g=footballGame,c=g.controller,preview=c.shot.preview,initial=g.state;cancelAnimationFrame(g.raf);let samples=0,error=0;
       for(let i=0;i<1800&&g.state!=='RESULT';i++){
         g.update(1/120);
-        if(g.state==='BALL_IN_MOTION'&&!g.pendingResult){
-          const p=ShoparFootball.DrawShotController.pointAt(c.route,c.travel);
-          error=Math.max(error,Math.hypot(g.ball.x-p.x,g.ball.y-p.y));samples++;
+        if(g.state==='BALL_IN_MOTION'&&!g.pendingResult&&g.ball.age<=preview.at(-1).time){
+          let index=1;while(index<preview.length-1&&preview[index].time<g.ball.age)index++;
+          const a=preview[index-1],b=preview[index],t=(g.ball.age-a.time)/(b.time-a.time);
+          error=Math.max(error,Math.hypot(g.ball.x-a.x-(b.x-a.x)*t,g.ball.y-a.y-(b.y-a.y)*t));samples++;
         }
       }
       g.render();g.lastTime=null;g.raf=requestAnimationFrame(g.frame);
       return {samples,error,kind:g.resolution?.kind,initial};
     })()`);
-    check(follows.samples>30&&follows.error<.00001,`Flight follows the interpreted preview ${width}: ${JSON.stringify(follows)}`);
+    check(follows.samples>30&&follows.error<.2,`Flight follows the interpreted preview ${width}: ${JSON.stringify(follows)}`);
     check(['goal','save','blocked','wide','post'].includes(follows.kind),'Curved shot resolves through physical contact');
     await select(mobile);
     const b=await evaluate('({x:footballGame.ball.x,y:footballGame.ball.y})');

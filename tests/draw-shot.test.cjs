@@ -33,92 +33,87 @@ test('spatial resampling ignores pointer event density and limits sharp or inval
   assert.equal(Boolean(Controller.buildRoute([{x:500,y:365},{x:510,y:330},{x:500,y:360},{x:500,y:84}])),true);
 });
 
-test('ground flight samples the displayed route identically at 30, 60 and 120 FPS', () => {
-  const route=Controller.buildRoute(wave(80)), states=[];
+function launch(shot) {
+  const ball={...shot.route.start,vx:Math.cos(shot.heading)*shot.speed,vy:Math.sin(shot.heading)*shot.speed,z:0,vz:shot.vz,spin:shot.spin,age:0,rotation:0};
+  const context={ball,physics:Physics,resultDelay:{pending:false}},controller=new Controller(context);
+  controller.route=shot.route;
+  return {ball,controller,context};
+}
+function crossing(shot, fps=240) {
+  const {ball,controller}=launch(shot);let peak=0,previous;
+  for(let i=0;i<fps*6&&ball.y>=84;i++){previous={...ball};controller.integrateShot(1/fps);peak=Math.max(peak,ball.z);}
+  assert.ok(ball.y<84,'shot reaches the goal plane');
+  const t=(previous.y-84)/(previous.y-ball.y);
+  return {x:previous.x+(ball.x-previous.x)*t,z:previous.z+(ball.z-previous.z)*t,vz:ball.vz,time:ball.age,peak};
+}
+
+test('physical ground flight matches the short preview at 30, 60 and 120 FPS and accepts velocity changes', () => {
+  const shot=Controller.buildShot(wave(80,70,1),false,Physics),states=[];
   for(const fps of [30,60,120]) {
-    const ball={...route.start,vx:Math.cos(route.heading)*route.speed,vy:Math.sin(route.heading)*route.speed,z:0,vz:0,spin:0,age:0,rotation:0};
-    const context={ball,physics:Physics,resultDelay:{pending:false},flow:{state:'BALL_IN_MOTION'}};
-    const c=new Controller(context);c.route=route;
-    for(let i=0;i<fps*.5;i++){
-      c.integrateShot(1/fps);
-      const expected=Controller.pointAt(route,c.travel);
-      close(ball.x,expected.x);close(ball.y,expected.y);assert.equal(ball.z,0);
-    }
-    states.push({...ball,travel:c.travel});
-    const before={...ball};context.resultDelay.pending=true;ball.vx=100;ball.vy=0;
-    c.integrateShot(.1);assert.ok(ball.x>before.x);close(ball.y,before.y);
+    const {ball,controller:c,context}=launch(shot);
+    for(let i=0;i<fps*.2;i++)c.integrateShot(1/fps);
+    const expected=shot.preview[24];close(ball.x,expected.x);close(ball.y,expected.y);assert.equal(ball.z,0);
+    states.push({...ball});
+    const before={...ball};ball.vx=-100;ball.vy=0;ball.spin=0;
+    c.integrateShot(.1);assert.ok(ball.x<before.x);close(ball.y,before.y);
+    context.resultDelay.pending=true;const free={...ball};Physics.integrateBall(free,.1);
+    c.integrateShot(.1);close(ball.x,free.x);close(ball.y,free.y);
   }
-  for(const state of states.slice(1)){close(state.x,states[0].x);close(state.y,states[0].y);close(state.travel,states[0].travel);}
+  for(const state of states.slice(1)){close(state.x,states[0].x);close(state.y,states[0].y);}
 });
 
-test('a completed drawing continues along its final tangent without stopping or turning back', () => {
-  const route=Controller.buildRoute(wave(80)),end=Controller.pointAt(route,route.length),beyond=Controller.pointAt(route,route.length+50);
-  close(Math.hypot(beyond.x-end.x,beyond.y-end.y),50);
-  close(Math.atan2(beyond.y-end.y,beyond.x-end.x),end.angle);
+test('flight continues after the preview without seeking the intended endpoint', () => {
+  const shot=Controller.buildShot(wave(80,80,1),false,Physics,1),{ball,controller}=launch(shot);
+  for(let i=0;i<120;i++)controller.integrateShot(1/120);
+  assert.ok(ball.age>shot.preview.at(-1).time);assert.ok(ball.y<84);
+  assert.ok(Math.hypot(ball.x-shot.target.x,ball.y-shot.target.y)>30);
+  assert.ok(Math.hypot(ball.vx,ball.vy)>38);
 });
 
-function aimedPoints(height, bend = 0) {
+function aimedPoints(height, bend = 0, cycles = 2) {
   return Array.from({ length: 41 }, (_, i) => {
     const t = i / 40;
-    return { x: 512 - 12 * t + bend * Math.sin(2 * Math.PI * t), y: 377 + (84 - height * .52 - 377) * t };
+    return { x: 512 - 12 * t + bend * Math.sin(cycles * Math.PI * t), y: 377 + (84 - height * .52 - 377) * t };
   });
 }
 
-test('goal mouth projection maps continuous target heights onto the physical goal line', () => {
-  const ground = Controller.buildShot(aimedPoints(0), false, Physics);
-  assert.equal(ground.vz, 0); assert.ok(ground.preview.every(p => p.z === 0));
-  for (const height of [15, 30, 45, 75, 90, 112, 140]) {
-    const shot = Controller.buildShot(aimedPoints(height, 30), false, Physics), end = shot.preview.at(-1);
-    assert.ok(shot.vz > 0); close(end.y, 84);
-    close(end.z, height, .01); close(end.y - end.z * .52, 84 - height * .52, .01);
-    close(shot.route.preview.at(-1).y, 84);
+test('goal mouth projection preserves intended height but shows only an early flight estimate', () => {
+  const ground=Controller.buildShot(aimedPoints(0),false,Physics);
+  assert.equal(ground.vz,0);assert.ok(ground.preview.every(p=>p.z===0));
+  for(const height of [15,30,45,75,90,112,140]) {
+    const shot=Controller.buildShot(aimedPoints(height,30,1),false,Physics);
+    assert.ok(shot.vz>0);close(shot.target.y,84);close(shot.target.z,height);
+    close(shot.target.y-shot.target.z*.52,84-height*.52);
+    assert.ok(shot.preview.at(-1).time<=shot.referenceTime*.71);
+    assert.ok(shot.preview.at(-1).y>84);
   }
 });
 
-test('CHIP has a slower rising and descending profile while preserving the full ground path', () => {
-  const points = aimedPoints(90, 35), normal = Controller.buildShot(points, false, Physics), chip = Controller.buildShot(points, true, Physics);
-  close(normal.route.length, chip.route.length);
-  assert.equal(JSON.stringify(normal.route.preview), JSON.stringify(chip.route.preview));
-  assert.ok(chip.speed < normal.speed * .5);
-  close(chip.speed / normal.speed, .45);
-  assert.ok(Math.max(...chip.preview.map(p => p.z)) > Math.max(...normal.preview.map(p => p.z)) + 5);
-  assert.ok(chip.preview.at(-2).z > chip.preview.at(-1).z);
-  assert.ok(normal.preview.at(-2).z < normal.preview.at(-1).z);
-  close(chip.preview.at(-1).z, 90, .01);
-  const lower = Controller.buildShot(aimedPoints(0), true, Physics);
-  assert.ok(lower.vz > 0); assert.ok(Math.max(...lower.preview.map(p => p.z)) > 30);
+test('CHIP remains slower and descends near the goal while a normal high shot is still rising', () => {
+  const points=aimedPoints(90),normal=Controller.buildShot(points,false,Physics),chip=Controller.buildShot(points,true,Physics);
+  assert.equal(JSON.stringify(normal.route.preview),JSON.stringify(chip.route.preview));close(chip.speed/normal.speed,.45);
+  const n=crossing(normal),c=crossing(chip);
+  assert.ok(c.time>n.time);assert.ok(c.vz<0);assert.ok(n.vz>0);assert.ok(c.peak>n.peak+5);
+  const lower=Controller.buildShot(aimedPoints(0),true,Physics);assert.ok(lower.vz>0);
 });
 
-test('elevated flight and its preview agree at 30, 60 and 120 FPS using shared gravity and drag', () => {
-  for (const chip of [false, true]) {
-    const shot = Controller.buildShot(aimedPoints(90, 30), chip, Physics), states = [];
-    for (const fps of [30, 60, 120]) {
-      const r = shot.route;
-      const ball = { ...r.start, vx: Math.cos(r.heading) * shot.speed, vy: Math.sin(r.heading) * shot.speed,
-        z: 0, vz: shot.vz, spin: 0, age: 0, rotation: 0 };
-      const c = new Controller({ ball, physics: Physics, resultDelay: { pending: false } }); c.route = r;
-      for (let i = 0; i < fps * .4; i++) c.integrateShot(1 / fps);
-      const predicted = shot.preview[48];
-      close(ball.x, predicted.x); close(ball.y, predicted.y); close(ball.z, predicted.z);
-      states.push({ ...ball });
+test('elevated physical flight matches its early preview at 30, 60 and 120 FPS', () => {
+  for(const chip of [false,true]) {
+    const shot=Controller.buildShot(aimedPoints(90,30,1),chip,Physics),states=[];
+    for(const fps of [30,60,120]) {
+      const {ball,controller}=launch(shot);
+      for(let i=0;i<fps*.2;i++)controller.integrateShot(1/fps);
+      const expected=shot.preview[24];close(ball.x,expected.x);close(ball.y,expected.y);close(ball.z,expected.z);states.push({...ball});
     }
-    for (const state of states.slice(1)) { close(state.x, states[0].x); close(state.y, states[0].y); close(state.z, states[0].z); }
+    for(const state of states.slice(1)){close(state.x,states[0].x);close(state.y,states[0].y);close(state.z,states[0].z);}
   }
 });
 
-test('a lob falls, bounces and continues with shared restitution rather than a scripted height', () => {
-  const shot = Controller.buildShot(aimedPoints(0), true, Physics), r = shot.route;
-  const ball = { ...r.start, vx: Math.cos(r.heading) * shot.speed, vy: Math.sin(r.heading) * shot.speed,
-    z: 0, vz: shot.vz, spin: 0, age: 0, rotation: 0 };
-  const c = new Controller({ ball, physics: Physics, resultDelay: { pending: false } }); c.route = r;
-  let bounced = false;
-  for (let i = 0; i < 240; i++) {
-    const impact = c.integrateShot(1 / 120);
-    if (impact) { bounced = true; assert.ok(ball.vz > 0); break; }
-  }
-  assert.ok(bounced); assert.ok(c.travel >= r.length - 1);
+test('a physical lob falls and bounces using shared restitution', () => {
+  const shot=Controller.buildShot(aimedPoints(0),true,Physics),{ball,controller}=launch(shot);let bounced=false;
+  for(let i=0;i<240;i++){if(controller.integrateShot(1/120)){bounced=true;assert.ok(ball.vz>0);break;}}
+  assert.ok(bounced);assert.ok(ball.y<90);
 });
-
 
 test('sharp zigzags and dominant bends produce one bounded curve without extra power', () => {
   const zigzag=Array.from({length:81},(_,i)=>({x:i===0||i===80?500:500+(i%2?220:-220),y:365-281*i/80}));
@@ -139,19 +134,19 @@ test('sharp zigzags and dominant bends produce one bounded curve without extra p
   assert.ok(Controller.pointAt(Controller.buildRoute(wave(80,-70,1)),140).x<470);
 });
 
-test('selected power increases speed but reduces the maximum single-curve bend', () => {
-  const points=wave(80,100,1),normal=Controller.buildRoute(points,.6),strong=Controller.buildRoute(points,1);
-  close(strong.speed/normal.speed,1.25);
-  const normalBend=Math.max(...normal.preview.map(p=>Math.abs(p.x-500)));
-  const strongBend=Math.max(...strong.preview.map(p=>Math.abs(p.x-500)));
-  close(strongBend/normalBend,.5);
-  close(strong.preview.at(-1).x,normal.preview.at(-1).x);close(strong.preview.at(-1).y,normal.preview.at(-1).y);
-  for(const chip of [false,true]) {
-    const shot=Controller.buildShot(aimedPoints(90),chip,Physics,1),r=shot.route;
-    close(shot.preview.at(-1).z,90,.01);
-    const ball={...r.start,vx:Math.cos(r.heading)*shot.speed,vy:Math.sin(r.heading)*shot.speed,z:0,vz:shot.vz,spin:0,age:0,rotation:0};
-    const c=new Controller({ball,physics:Physics,resultDelay:{pending:false}});c.route=r;
-    for(let i=0;i<36;i++)c.integrateShot(1/120);
-    const expected=shot.preview[36];close(ball.x,expected.x);close(ball.y,expected.y);close(ball.z,expected.z);
+test('power and curve create deterministic distinct A/B/C trajectories without target locking', () => {
+  const cases=[[.6,80],[.8,35],[1,80]],results=[];
+  for(const [power,bend] of cases) {
+    const shot=Controller.buildShot(aimedPoints(90,bend,1),false,Physics,power),reference=crossing(shot);
+    for(const fps of [30,60,120]) {
+      const actual=crossing(shot,fps);close(actual.x,reference.x,1);close(actual.z,reference.z,1);
+      assert.equal(Physics.goalLineOutcome(actual.x,actual.z),Physics.goalLineOutcome(reference.x,reference.z));
+    }
+    assert.deepEqual(crossing(shot),reference);results.push({shot,...reference});
   }
+  assert.ok(results[0].shot.speed<results[1].shot.speed&&results[1].shot.speed<results[2].shot.speed);
+  assert.ok(Math.abs(results[0].shot.spin)>Math.abs(results[2].shot.spin));
+  assert.ok(results[2].x-results[0].x>60);assert.ok(Math.abs(results[2].z-results[0].z)>5);
+  const low=Controller.buildShot(aimedPoints(90,80,1),false,Physics,.6),high=Controller.buildShot(aimedPoints(90,80,1),false,Physics,1);
+  close(high.speed/low.speed,1.25);close(Math.abs(high.spin/low.spin),.45);close(high.heading,low.heading);close(high.vz,low.vz);
 });

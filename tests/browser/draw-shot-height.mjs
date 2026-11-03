@@ -42,7 +42,7 @@ try {
         await pointer('move',await world(start.x+(attempt.x-start.x)*t+(attempt.bend||0)*Math.sin(Math.PI*t),start.y+(endY-start.y)*t),mobile);
       }
       await wait(40);
-      const planned = await evaluate("(()=>{const c=footballGame.controller,s=c.shot;return{end:s.preview.at(-1),peak:Math.max(...s.preview.map(p=>p.z)),disabled:document.getElementById('chip-button').disabled}})()");
+      const planned = await evaluate("(()=>{const c=footballGame.controller,s=c.shot;return{end:s.target,peak:Math.max(...s.preview.map(p=>p.z)),disabled:document.getElementById('chip-button').disabled}})()");
       check(planned.disabled&&planned.peak>1, 'Height-aware preview with locked control');
       check(Math.abs(planned.end.y-planned.end.z*.52-endY)<.05, 'Projected endpoint matches drawn goal height');
       if(attempt.kind==='goal') await screen(`draw-shot-${attempt.chip?'chip':'high'}-preview-${width}`);
@@ -53,7 +53,7 @@ try {
         const g=footballGame,c=g.controller,preview=c.shot.preview;cancelAnimationFrame(g.raf);let maxError=0,samples=0;
         for(let i=0;i<3000&&g.state!=='RESULT';i++){
           g.update(1/120);
-          if(g.state==='BALL_IN_MOTION'&&!g.pendingResult){
+          if(g.state==='BALL_IN_MOTION'&&!g.pendingResult&&g.ball.age<=preview.at(-1).time){
             let index=1;while(index<preview.length-1&&preview[index].time<g.ball.age)index++;
             const a=preview[index-1],b=preview[index],t=(g.ball.age-a.time)/(b.time-a.time);
             const x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;
@@ -65,7 +65,7 @@ try {
       })()`);
       check(result.kind===attempt.kind, `Physical ${attempt.kind}, chip ${Boolean(attempt.chip)}`);
       check(result.samples>10&&result.maxError<.2, `Flight follows height preview, error ${result.maxError}`);
-      if(['goal','bar','post','high'].includes(attempt.kind)) check(Math.abs(result.crossing.z-planned.end.z)<.02, 'Real crossing height agrees');
+      if(['goal','bar','post','high'].includes(attempt.kind)) check(await evaluate('footballGame.controller.context.physics.goalLineOutcome('+result.crossing.x+','+result.crossing.z+')')===attempt.kind, 'Outcome follows real crossing geometry');
       if(attempt.chip&&attempt.kind==='goal') {
         check(result.cleared, 'Lob clears keeper below bar');
         await tap('next-button',mobile); await until("footballGame.state==='AIMING'");

@@ -1273,7 +1273,7 @@ function drawShot(g, x, bend = 0) {
 }
 
 test('Draw the Shot launches directly, resolves physically at all frame rates and retries independently', () => {
-  for (const fps of [30, 60, 120]) for (const [x, bend, expected] of [[415, 40, 'goal'], [420, 0, 'save'], [530, 0, 'blocked'], [800, 0, 'wide']]) {
+  for (const fps of [30, 60, 120]) for (const [x, bend, expected] of [[430, 40, 'goal'], [415, 40, 'post'], [420, 0, 'save'], [530, 0, 'blocked'], [800, 0, 'wide']]) {
     const { game: g, elements } = fixture(); g.startPractice(10); g.update(.9);
     assert.equal(elements.get('chapter-number').textContent, '11/11');
     assert.match(elements.get('bottom-hint').textContent, /Draw from the ball/);
@@ -1346,10 +1346,11 @@ test('Draw the Shot can follow a drawn detour around a defender blocking the dir
   assert.ok(['goal', 'save', 'post', 'wide'].includes(g.resolution.kind));
 });
 
-function drawElevatedShot(g, x, height, chip = false, bend = 0) {
+function drawElevatedShot(g, x, height, chip = false, bend = 0, power = .6) {
   if (chip) g.controller.handleInput({ type: 'chip-toggle' });
   const start = { x: g.ball.x, y: g.ball.y }, y = 84 - height * .52;
   g.onPointerDown(defensePointer(g, start));
+  if (power > .6) g.update((power - .6) / .4 * .8);
   for (let i = 1; i <= 30; i++) {
     const t = i / 30;
     g.onPointerMove(defensePointer(g, { x: start.x + (x - start.x) * t + bend * Math.sin(Math.PI * t), y: start.y + (y - start.y) * t }));
@@ -1359,18 +1360,25 @@ function drawElevatedShot(g, x, height, chip = false, bend = 0) {
 
 test('Draw the Shot elevated and chip attempts resolve through real keeper, defender and frame contacts', () => {
   const cases = [[415,90,false,'goal'],[500,60,false,'save'],[530,0,false,'blocked'],[415,112,false,'bar'],
-    [400,90,false,'post'],[500,140,false,'high'],[500,90,true,'goal'],[500,30,true,'save'],[500,140,true,'high'],[415,90,false,'goal',40]];
-  for (const fps of [30,60,120]) for (const [x,height,chip,kind,bend = 0] of cases) {
+    [400,90,false,'post'],[500,140,false,'high'],[500,90,true,'goal'],[500,30,true,'save'],[500,140,true,'high'],[415,90,false,'goal',40],[500,90,false,'goal',80,.6],[500,90,false,'save',35,.8],[500,90,false,'post',80,1]];
+  for (const fps of [30,60,120]) for (const [x,height,chip,kind,bend = 0,power = .6] of cases) {
     const { game: g } = fixture(); g.startPractice(10); g.update(.9);
-    drawElevatedShot(g,x,height,chip,bend);
+    drawElevatedShot(g,x,height,chip,bend,power);
     assert.equal(g.state,'BALL_IN_MOTION'); assert.equal(g.contact,null);
-    const preview = g.controller.shot.preview, expected = preview.at(-1);
+    const shot=g.controller.shot;
+    const probe={...g.ball},free=new g.controller.constructor({ball:probe,physics:g.controller.context.physics,resultDelay:{pending:false}});
+    free.route=g.controller.route;
+    let previous;
+    for(let i=0;i<2400&&probe.y>=84;i++){previous={...probe};free.integrateShot(1/240);}
+    const t=(previous.y-84)/(previous.y-probe.y);
+    const expected={x:previous.x+(probe.x-previous.x)*t,z:previous.z+(probe.z-previous.z)*t};
+    assert.ok(shot.preview.at(-1).time<shot.referenceTime);
     assert.ok(height === 0 || g.ball.vz > 0);
     for (let i=0;i<fps*16&&g.state!=='RESULT';i++) g.update(1/fps);
     assert.equal(g.resolution.kind,kind,`${fps} FPS, ${x}, ${height}, chip ${chip}`);
     if (['goal','bar','post','high'].includes(kind)) {
-      assert.ok(Math.abs(g.resolution.crossing.z-expected.z)<.02);
-      assert.ok(Math.abs(g.resolution.crossing.x-expected.x)<.02);
+      assert.ok(Math.abs(g.resolution.crossing.z-expected.z)<.2);
+      assert.ok(Math.abs(g.resolution.crossing.x-expected.x)<.2, JSON.stringify({fps,x,height,chip,bend,power,actual:g.resolution.crossing.x,expected:expected.x}));
     }
     if (chip&&kind==='goal') assert.equal(g.flight.clearedKeeper,true);
     assert.equal(g.stats.goals,kind==='goal'?1:0);
@@ -1401,7 +1409,7 @@ test('Draw the Shot targeting feedback and chip tempo reflect current physics wi
     const start = { x:g.ball.x,y:g.ball.y }, end = { x:500,y:84-height*.52 };
     g.onPointerDown(defensePointer(g,start)); g.onPointerMove(defensePointer(g,end));
     const target = g.controllerPresentation().shotTarget;
-    assert.equal(target.label,label); assert.ok(Math.abs(target.y-target.z*.52-end.y)<.02);
+    assert.equal(target.label,`AIM ${label}`); assert.ok(Math.abs(target.y-target.z*.52-end.y)<.02);
     const before = JSON.stringify(g.controller.route); g.render(); assert.equal(JSON.stringify(g.controller.route),before);
     g.cancelPointer(g.pointer.id);
   }
@@ -1410,7 +1418,7 @@ test('Draw the Shot targeting feedback and chip tempo reflect current physics wi
   while (!g.pendingResult && elapsed < 3) { g.update(1/120); elapsed += 1/120; }
   assert.equal(g.resolution.kind,'goal'); assert.equal(g.flight.clearedKeeper,true);
   assert.ok(elapsed < 1.8);
-  assert.ok(Math.abs(elapsed*.85-g.controller.shot.preview.at(-1).time)<.03);
+  assert.ok(Math.abs(elapsed*.85-g.ball.age)<.03);
   g.startPractice(10); g.update(.9); g.transition('BALL_IN_MOTION');
   for (const [vz,phase] of [[20,'RISING'],[0,'AT THE TOP'],[-20,'DROPPING']]) {
     Object.assign(g.ball,{z:130,vz}); g.updateFlightUI();
@@ -1440,4 +1448,26 @@ test('Draw the Shot holds to charge, ignores jitter and locks power throughout o
   g.onPointerDown(defensePointer(g,{x:g.ball.x,y:g.ball.y}));g.update(.8);assert.equal(g.controller.power,1);
   g.update(2);assert.equal(g.controller.power,1);
   g.cancelPointer(g.pointer.id);assert.equal(g.controller.power,.6);assert.equal(g.controllerPresentation().shotPower,null);assert.equal(g.state,'AIMING');
+});
+
+test('Draw the Shot cycles six shooting positions across retry, restart and re-entry', () => {
+  const {game:g}=fixture(),positions=[];
+  for(let i=0;i<7;i++) {
+    g.startPractice(10);g.update(.9);
+    positions.push(JSON.stringify([g.player.x,g.player.y,g.defenders[0].x,g.defenders[0].y]));
+    const foot=g.possessionPosition(g.player);
+    assert.equal(g.ball.x,foot.x);assert.equal(g.ball.y,foot.y);
+    assert.equal(g.player.startX,g.player.x);assert.equal(g.player.startY,g.player.y);
+    assert.equal(g.controller.power,.6);assert.equal(g.controller.chip,false);
+    assert.equal(g.controller.route,null);assert.equal(g.controller.travel,0);
+    drawElevatedShot(g,500,90,true);
+    for(let step=0;step<2400&&g.state!=='RESULT';step++)g.update(1/120);
+    assert.equal(g.resolution.kind,'goal');assert.ok(Math.abs(g.resolution.crossing.z-90)<.02);
+  }
+  assert.equal(new Set(positions.slice(0,6)).size,6);assert.equal(positions[0],positions[6]);
+  const initial=JSON.stringify([g.player.x,g.player.y]);g.nextHighlight();g.update(.9);
+  const retry=JSON.stringify([g.player.x,g.player.y]);assert.notEqual(retry,initial);
+  assert.equal(g.controllerPresentation().shotTutorial,null);
+  g.restart();g.update(.9);assert.notEqual(JSON.stringify([g.player.x,g.player.y]),retry);
+  assert.equal(g.controller.power,.6);assert.equal(g.controller.chip,false);
 });
