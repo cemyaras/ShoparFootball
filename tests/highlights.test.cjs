@@ -12,17 +12,19 @@ function catalog() {
   return window.ShoparFootball;
 }
 
-test('the catalog retains the original order and appends Draw the Shot', () => {
+test('the catalog retains the original order and appends the practice highlights', () => {
   const entries = catalog().Highlights.all();
   assert.equal(JSON.stringify(entries.map(({ id, title, player }) => [id, title, player])), JSON.stringify([
     ['one-on-one', 'One on one.', [500, 365]], ['from-distance', 'From distance.', [540, 520]],
     ['through-ball', 'The through ball.', [600, 476]], ['two-against-two', 'Two against two.', [379, 425]],
     ['read-the-game', 'Read the game.', [485, 428]], ['win-the-ball', 'Win the Ball', [370, 520]],
     ['cut-the-pass', 'Cut the Pass', [550, 530]], ['save-the-penalty', 'Save the Penalty', [500, 400]],
-    ['save-the-shot', 'Save the Shot', [500, 440]], ['take-the-penalty', 'Take the Penalty', [500, 250]], ['draw-the-shot', 'Draw the Shot', [500, 365]]
+    ['save-the-shot', 'Save the Shot', [500, 440]], ['take-the-penalty', 'Take the Penalty', [500, 250]], ['draw-the-shot', 'Draw the Shot', [500, 365]],
+    ['precision-pass', 'Precision Pass', [350, 560]]
   ]));
   assert.equal(entries.filter(entry => entry.category === 'defense').length, 4);
   assert.equal(entries.filter(entry => entry.keeperEligible).length, 5);
+  assert.deepEqual(Array.from(entries.filter(entry=>entry.practiceOnly),entry=>entry.id),['draw-the-shot','precision-pass']);
 });
 
 test('registry rejects ambiguous IDs and returns ordered list snapshots without cloning definitions', () => {

@@ -24,4 +24,18 @@
     intro: 'Draw to a height in goal. CHIP adds a lob.', tip: 'Draw from the ball, finish higher for height, or turn CHIP on before drawing a lob.',
     create: context => window.ShoparFootball.DrawShotController.create(context)
   });
+  registry.register({
+    id: 'precision-pass', title: 'Precision Pass', category: 'attack', practiceOnly: true, keeperEligible: false,
+    player: [350, 560], mates: [[650, 450], [440, 300]], defenders: [[500, 380], [580, 320]],
+    create: context => window.ShoparFootball.PrecisionPassController.create(context),
+    outcomes: {
+      pass_complete: { success: true, stat: 'passes', title: 'PASS COMPLETE!', detail: 'Your teammate reached and controlled the moving ball.', sound: 'tap', delay: 1.5,
+        banner: { text: 'PASS COMPLETE!', sub: 'DIRECTION · TIMING · POWER', color: '#d0f69a', time: 1.5, max: 1.5 }, flight: 'PASS COMPLETE' },
+      pass_intercepted: { ...outcomes.attack.intercepted, detail: 'A defender reached the passing lane first. Look for another angle or lead the run.' },
+      pass_short: { ...outcomes.attack.weak, title: 'PASS TOO SHORT', detail: 'The ball lost pace before reaching your target. Hold longer for a longer pass.',
+        banner: { text: 'PASS TOO SHORT', sub: 'HOLD FOR MORE POWER', color: '#cfd8dc', time: 1.6, max: 1.6 }, flight: 'PASS TOO SHORT' },
+      pass_missed: { ...outcomes.attack.wide, title: 'PASS MISSED', detail: 'The receiver could not control the pass. Try less power, a better direction or earlier timing.',
+        banner: { text: 'PASS MISSED', sub: 'TIMING · DIRECTION · PACE', color: '#90caf9', time: 1.6, max: 1.6 }, flight: 'PASS MISSED' }
+    }
+  });
 })();

@@ -631,17 +631,17 @@ test('moving the held finger and secondary pointers cannot tackle or steer', () 
   assert.equal(g.resolution.kind, 'ball_won');
 });
 
-test('all eleven highlights can be opened directly as independent practice attempts', () => {
+test('all twelve highlights can be opened directly as independent practice attempts', () => {
   const { game: g, elements } = fixture();
-  for (let index = 0; index < 11; index++) {
+  for (let index = 0; index < 12; index++) {
     g.stats.goals = 3; g.outcomes[0] = true;
     g.openHighlightPicker(); g.startPractice(index);
     assert.equal(elements.get('highlight-dialog').open, false);
     assert.equal(g.practiceIndex, index); assert.equal(g.index, index);
     assert.equal(g.stats.goals, 0); assert.equal(g.outcomes.length, 0);
     g.update(.9);
-    assert.equal(g.state, index >= 5 && index <= 8 ? 'DEFENDING' : index === 4 ? 'INTERCEPTION' : 'AIMING');
-    assert.equal(elements.get('chapter-number').textContent, `${index + 1}/11`);
+    assert.equal(g.state, (index >= 5 && index <= 8 || index === 11) ? 'DEFENDING' : index === 4 ? 'INTERCEPTION' : 'AIMING');
+    assert.equal(elements.get('chapter-number').textContent, `${index + 1}/12`);
   }
 });
 
@@ -677,7 +677,7 @@ test('play all exits practice and restores normal ten-highlight progression', ()
 
 test('invalid direct selections leave the current highlight untouched', () => {
   const { game: g } = fixture(); start(g);
-  for (const value of [-1, 11, NaN, 1.5, '5', null]) g.startPractice(value);
+  for (const value of [-1, 12, NaN, 1.5, '5', null]) g.startPractice(value);
   assert.equal(g.index, 0); assert.equal(g.practiceIndex, null); assert.equal(g.state, 'AIMING');
 });
 
@@ -853,15 +853,15 @@ test('a startup registration updates the menu, progress and full-series/practice
   });
   assert.match(elements.get('play-button').innerHTML, /PLAY ALL 11/);
   assert.match(elements.get('play-all-button').innerHTML, /PLAY ALL 11/);
-  assert.equal((elements.get('chapter-progress').innerHTML.match(/<i>/g) || []).length, 12);
-  assert.equal((elements.get('highlight-list').innerHTML.match(/data-highlight=/g) || []).length, 12);
-  g.startPractice(11); g.update(.9);
-  assert.equal(g.state, 'AIMING'); assert.equal(elements.get('chapter-number').textContent, '12/12');
+  assert.equal((elements.get('chapter-progress').innerHTML.match(/<i>/g) || []).length, 13);
+  assert.equal((elements.get('highlight-list').innerHTML.match(/data-highlight=/g) || []).length, 13);
+  g.startPractice(12); g.update(.9);
+  assert.equal(g.state, 'AIMING'); assert.equal(elements.get('chapter-number').textContent, '13/13');
   kick(g, { x: 420 }); until(g, () => g.state === 'RESULT');
-  g.nextHighlight(); g.update(.9); assert.equal(g.index, 11); assert.equal(g.state, 'AIMING');
+  g.nextHighlight(); g.update(.9); assert.equal(g.index, 12); assert.equal(g.state, 'AIMING');
   g.beginSession(); g.index = 9; g.beginHighlight(); g.update(.9);
   kick(g, { x: 800 }); until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
-  assert.equal(g.index, 11); assert.equal(g.state, 'AIMING');
+  assert.equal(g.index, 12); assert.equal(g.state, 'AIMING');
   kick(g, { x: 420 }); until(g, () => g.state === 'RESULT'); g.nextHighlight();
   assert.equal(g.state, 'SESSION_SUMMARY');
 });
@@ -906,7 +906,7 @@ test('registered outcome descriptors resolve once, keep banner templates intact 
     descriptor = { ...base, title: 'TEST WIN', detail: 'TEST DETAIL', flight: 'TEST FLIGHT', banner: { ...base.banner, text: 'TEST WIN' } };
     namespace.Highlights.register({ ...namespace.Highlights.get('one-on-one'), id: 'test-result', title: 'Test result', keeperEligible: false, outcomes: { custom: descriptor } });
   });
-  g.startPractice(11); g.update(.9); g.finish('custom', 'Custom detail');
+  g.startPractice(12); g.update(.9); g.finish('custom', 'Custom detail');
   assert.equal(g.stats.tackles, 1); assert.equal(g.stats.goals, 0); assert.equal(g.stats.misses, 0);
   assert.equal(elements.get('result-title').textContent, 'TEST WIN');
   assert.equal(elements.get('result-detail').textContent, 'TEST DETAIL');
@@ -914,7 +914,7 @@ test('registered outcome descriptors resolve once, keep banner templates intact 
   assert.equal(g.pendingResult.wait, 2.1); g.finish('custom'); assert.equal(g.stats.tackles, 1);
   g.update(.2); assert.ok(g.banner.time < descriptor.banner.time); assert.equal(descriptor.banner.time, 1.4);
   until(g, () => g.state === 'RESULT'); g.finish('custom'); assert.equal(g.stats.tackles, 1);
-  g.nextHighlight(); g.update(.9); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[11], undefined);
+  g.nextHighlight(); g.update(.9); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[12], undefined);
 });
 
 test('controller contexts expose actor references and services but no host, DOM or statistics', () => {
@@ -962,13 +962,13 @@ test('a test-only controller registration handles input, cancellation, completio
       }; }
     });
   });
-  g.startPractice(11); g.update(.9); assert.equal(g.state, 'DEFENDING');
+  g.startPractice(12); g.update(.9); assert.equal(g.state, 'DEFENDING');
   const e = defensePointer(g, g.player);
   g.onPointerDown(e); assert.equal(g.pointer.id, e.pointerId); g.cancelPointer(e.pointerId);
   assert.equal(g.pointer, null); assert.equal(g.pendingResult, null);
   g.onPointerDown(e); g.onPointerUp(e); assert.equal(g.resolution.kind, 'pass_won'); assert.equal(g.stats.tackles, 1);
   until(g, () => g.state === 'RESULT'); g.nextHighlight(); g.update(.9);
-  assert.equal(g.index, 11); assert.equal(g.stats.tackles, 0); assert.ok(events.includes('cancel')); assert.ok(events.includes('disposed'));
+  assert.equal(g.index, 12); assert.equal(g.stats.tackles, 0); assert.ok(events.includes('cancel')); assert.ok(events.includes('disposed'));
 });
 
 test('viewport aliases preserve mapping and DPR while only changed geometry cancels a captured pointer', () => {
@@ -1123,21 +1123,21 @@ test('a standalone registration after class loading enters, resolves both ways a
       }
     });
   });
-  assert.equal(g.definitions.length, 12); assert.equal(g.session.definitions, g.definitions);
+  assert.equal(g.definitions.length, 13); assert.equal(g.session.definitions, g.definitions);
   assert.match(elements.get('play-button').innerHTML, /PLAY ALL 11/);
   assert.equal(g.highlightAdapter, undefined);
-  g.startPractice(11); g.update(.9); g.update(.01);
+  g.startPractice(12); g.update(.9); g.update(.01);
   assert.equal(g.state, 'DEFENDING'); assert.equal(elements.get('bottom-hint').textContent, 'Test input');
   const win = defensePointer(g, { x: 480, y: 400 }); g.onPointerDown(win); g.onPointerUp(win);
   assert.equal(g.pointer, null); assert.equal(g.stats.tackles, 1); assert.equal(g.stats.misses, 0);
   assert.equal(elements.get('result-title').textContent, 'TEST WON!'); until(g, () => g.state === 'RESULT');
   assert.match(elements.get('next-button').innerHTML, /RETRY/); g.nextHighlight(); g.update(.9);
-  assert.equal(contexts.length, 2); assert.equal(disposed, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[11], undefined);
+  assert.equal(contexts.length, 2); assert.equal(disposed, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[12], undefined);
   contexts[0].complete('test_won', 'Old attempt'); assert.equal(g.pendingResult, null); assert.equal(g.stats.tackles, 0);
   const lose = defensePointer(g, { x: 600, y: 400 }); g.onPointerDown(lose); g.onPointerUp(lose);
-  assert.equal(g.stats.misses, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[11], false);
+  assert.equal(g.stats.misses, 1); assert.equal(g.stats.tackles, 0); assert.equal(g.outcomes[12], false);
   assert.equal(elements.get('result-title').textContent, 'TEST LOST!'); until(g, () => g.state === 'RESULT');
-  g.nextHighlight(); g.update(.9); assert.equal(g.index, 11); assert.equal(g.stats.misses, 0); assert.equal(contexts.length, 3);
+  g.nextHighlight(); g.update(.9); assert.equal(g.index, 12); assert.equal(g.stats.misses, 0); assert.equal(contexts.length, 3);
   g.destroy(); assert.equal(disposed, 3);
 });
 
@@ -1311,7 +1311,7 @@ function drawShot(g, x, bend = 0) {
 test('Draw the Shot launches directly, resolves physically at all frame rates and retries independently', () => {
   for (const fps of [30, 60, 120]) for (const [x, bend, expected] of [[440, 40, 'goal'], [430, 40, 'post'], [415, 40, 'wide'], [420, 0, 'save'], [530, 0, 'blocked'], [800, 0, 'wide']]) {
     const { game: g, elements } = fixture(); g.startPractice(10); g.update(.9);
-    assert.equal(elements.get('chapter-number').textContent, '11/11');
+    assert.equal(elements.get('chapter-number').textContent, '11/12');
     assert.match(elements.get('bottom-hint').textContent, /Draw from the ball/);
     drawShot(g, x, bend);
     assert.equal(g.state, 'BALL_IN_MOTION'); assert.equal(g.contact, null); assert.equal(g.pointer, null);
@@ -1362,10 +1362,41 @@ test('Draw the Shot preserves straight and opposite drawn curves with bounded sp
 test('Draw the Shot stays outside Play All and match schedules', () => {
   const { game: g, elements } = fixture();
   assert.match(elements.get('play-button').innerHTML, /PLAY ALL 10/);
-  assert.equal(g.session.seriesIndices.length, 10); assert.equal(g.definitions.length, 11);
+  assert.equal(g.session.seriesIndices.length, 10); assert.equal(g.definitions.length, 12);
   g.beginSession(); g.index = 9; g.beginHighlight(); g.update(.9); g.finish('wide');
   until(g, () => g.state === 'RESULT'); g.nextHighlight(); assert.equal(g.state, 'SESSION_SUMMARY');
   for (const random of [() => 0, () => .9]) { g.startMatch(random); assert.ok(!g.session.match.schedule.includes('draw-the-shot')); }
+});
+
+test('Precision Pass is practice-only and completes physical passes, interceptions and misses through normal results', () => {
+  for(const [hold,kind,stat] of [[0,'pass_short','misses'],[.3,'pass_intercepted','misses'],[.6,'pass_complete','passes'],[1.2,'pass_missed','misses']]) {
+    const {game:g,elements}=fixture();g.startPractice(11);g.update(.9);
+    assert.equal(g.state,'DEFENDING');assert.equal(g.defense,null);assert.equal(g.practiceIndex,11);
+    assert.equal(elements.get('chapter-number').textContent,'12/12');
+    const event=p=>({...defensePointer(g,p),pointerType:'touch'});
+    g.onPointerDown(event({x:650,y:450}));g.update(hold);
+    const power=g.controller.power;g.onPointerUp(event({x:900,y:600}));
+    assert.equal(g.pointer,null);assert.equal(g.controller.phase,'flight');assert.equal(g.controller.releasedPower,power);
+    until(g,()=>g.state==='RESULT');assert.equal(g.resolution.kind,kind);assert.equal(g.stats[stat],1);
+    assert.match(elements.get('next-button').innerHTML,/RETRY/);
+    g.nextHighlight();g.update(.9);assert.equal(g.index,11);assert.equal(g.controller.phase,'aiming');
+    assert.equal(g.stats.passes,0);assert.equal(g.stats.misses,0);
+    g.beginSession();assert.equal(g.session.seriesIndices.length,10);assert.ok(!g.session.seriesIndices.includes(11));
+    g.startMatch(()=>.5);assert.ok(!g.session.match.schedule.includes('precision-pass'));
+  }
+});
+
+test('Precision Pass cancellation and dialogs leave the pass unlaunched and pause moving players', () => {
+  const {game:g,elements}=fixture();g.startPractice(11);g.update(.9);
+  const event={...defensePointer(g,{x:700,y:410}),pointerType:'touch'};
+  g.onPointerDown(event);g.update(.3);g.cancelPointer(event.pointerId);g.onPointerUp(event);
+  assert.equal(g.controller.phase,'aiming');assert.equal(g.controller.holding,false);assert.equal(g.controller.target,null);
+  g.onPointerDown(event);g.update(.3);elements.get('help-button').dispatchEvent({type:'click'});
+  const before=JSON.stringify([g.mates,g.defenders,g.ball,g.controller.elapsed]);g.update(2);
+  assert.equal(JSON.stringify([g.mates,g.defenders,g.ball,g.controller.elapsed]),before);
+  assert.equal(g.pointer,null);assert.equal(g.controller.phase,'aiming');assert.equal(g.controller.target,null);
+  elements.get('help-dialog').close();g.update(.1);assert.notEqual(g.controller.elapsed,JSON.parse(before)[3]);
+  g.onPointerDown(event);g.update(.6);g.onPointerUp(event);assert.equal(g.controller.phase,'flight');
 });
 
 test('Draw the Shot can follow a drawn detour around a defender blocking the direct shot', () => {
