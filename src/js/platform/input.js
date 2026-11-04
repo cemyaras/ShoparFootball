@@ -13,6 +13,9 @@
       game.listen(game.canvas, 'lostpointercapture', e => { if (game.pointer?.id === e.pointerId) game.cancelPointer(e.pointerId); });
       // Suppress browser selection/drag UI on the pitch, leaving sibling controls usable.
       for (const type of ['contextmenu', 'selectstart', 'dragstart']) game.listen(game.canvas, type, e => e.preventDefault());
+      // Cancel native tap recognition even when gameplay ignores a tap.
+      // Pointer events remain the only path that delivers gameplay input.
+      for (const type of ['touchstart', 'touchend']) game.listen(game.canvas, type, e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
     }
     bindWindow() {
       const game = this.game;

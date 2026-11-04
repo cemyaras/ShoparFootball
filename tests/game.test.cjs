@@ -1045,18 +1045,38 @@ test('native transport keeps idle highlights inert and uses the released drag po
 
 test('native canvas guards prevent selection and dragging without intercepting sibling controls', () => {
   const {game:g,elements,document}=fixture();start(g,10);
-  for(const type of ['contextmenu','selectstart','dragstart']) {
+  for(const type of ['contextmenu','selectstart','dragstart','touchstart','touchend']) {
     let prevented=0;
-    g.canvas.dispatchEvent({type,preventDefault(){prevented++;}});
+    g.canvas.dispatchEvent({type,cancelable:true,preventDefault(){prevented++;}});
     assert.equal(prevented,1);
-    elements.get('chip-button').dispatchEvent({type,preventDefault(){prevented++;}});
-    elements.get('help-dialog').dispatchEvent({type,preventDefault(){prevented++;}});
-    document.dispatchEvent({type,preventDefault(){prevented++;}});
+    elements.get('chip-button').dispatchEvent({type,cancelable:true,preventDefault(){prevented++;}});
+    elements.get('help-dialog').dispatchEvent({type,cancelable:true,preventDefault(){prevented++;}});
+    document.dispatchEvent({type,cancelable:true,preventDefault(){prevented++;}});
     assert.equal(prevented,1,'prevention belongs only to the canvas');
   }
-  assert.equal(g.canvas.listenerCount('touchstart'),0);assert.equal(g.canvas.listenerCount('touchmove'),0);
+  assert.equal(g.canvas.listenerCount('touchstart'),1);assert.equal(g.canvas.listenerCount('touchend'),1);
+  assert.equal(g.canvas.listenerCount('touchmove'),0);
   g.destroy();
-  for(const type of ['contextmenu','selectstart','dragstart'])assert.equal(g.canvas.listenerCount(type),0);
+  for(const type of ['contextmenu','selectstart','dragstart','touchstart','touchend'])assert.equal(g.canvas.listenerCount(type),0);
+});
+
+test('native rapid touch taps are guarded without duplicating pointer input or changing shot state', () => {
+  const {game:g}=fixture();start(g,10);
+  const inputs=[],handle=g.controller.handleInput;
+  g.controller.handleInput=function(input){inputs.push(input.type);return handle.call(this,input);};
+  let prevented=0;
+  for(let i=0;i<2;i++) {
+    const e={...defensePointer(g,g.ball),pointerType:'touch'};
+    g.canvas.dispatchEvent({...e,type:'pointerdown'});
+    g.canvas.dispatchEvent({type:'touchstart',cancelable:true,preventDefault(){prevented++;}});
+    g.canvas.dispatchEvent({...e,type:'pointerup'});
+    g.canvas.dispatchEvent({type:'touchend',cancelable:true,preventDefault(){prevented++;}});
+  }
+  assert.deepEqual(inputs,['down','up','down','up']);assert.equal(prevented,4);
+  assert.equal(g.state,'AIMING');assert.equal(g.pointer,null);assert.equal(g.controller.shot,null);
+  g.transition('BALL_IN_MOTION');inputs.length=0;
+  for(const type of ['touchstart','touchend'])g.canvas.dispatchEvent({type,cancelable:true,preventDefault(){prevented++;}});
+  assert.equal(prevented,6);assert.deepEqual(inputs,[]);
 });
 
 test('the live renderer bridge preserves facade references and rendering never advances any highlight', () => {
