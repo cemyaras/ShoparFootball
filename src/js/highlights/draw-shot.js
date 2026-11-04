@@ -165,16 +165,16 @@
       const aimedAtGoal = c.flow.state === State.AIMING && target && Math.abs(target.y - FIELD.top) < .01 && target.x >= FIELD.goalLeft && target.x <= FIELD.goalRight;
       const phase = c.ball.z < 5 ? 'GROUND' : c.ball.vz > 8 ? 'RISING' : c.ball.vz < -8 ? 'DROPPING' : 'AT THE TOP';
       return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw toward your target in the goal.' : 'Draw from the ball. Hold for power, draw to aim, release to shoot.') : '',
-        ariaLabel: 'Draw the Shot. Hold the ball to charge from 60 to 100 percent. Draw to lock power and aim. Release to shoot. Finish higher in the goal for height. Turn CHIP on before holding for a lob.',
+        ariaLabel: 'Draw the Shot. Hold the ball as power cycles from 60 to 100 and back to 60 percent every 1.5 seconds. Draw to lock the current power and aim. Release to shoot. Finish higher in the goal for height. Turn CHIP on before holding for a lob.',
         shotPower: c.flow.state === State.AIMING && this.points ? { x: c.player.x,
           y: c.player.y - window.ShoparFootball.Core.SPRITES.playerHeight * window.ShoparFootball.Core.playerScale(c.player), value: this.power, locked: this.drawing } : null,
-        shotTutorial: c.flow.state === State.AIMING && this.tutorialTime > 0 && !this.points ? ['HOLD FOR POWER', 'DRAW TO AIM', 'RELEASE TO SHOOT'] : null,
+        shotTutorial: c.flow.state === State.AIMING && this.tutorialTime > 0 && !this.points ? ['HOLD · POWER CYCLES', 'DRAW TO LOCK POWER', 'RELEASE TO SHOOT'] : null,
         shotTarget: aimedAtGoal ? { ...target, label: target.z <= 6 ? 'AIM GROUND' : target.z < GOAL.height * .65 ? 'AIM MID' : 'AIM HIGH' } : null,
         flightLabel: c.flow.state === State.BALL_IN_MOTION && !c.resolution ? `HEIGHT NOW · ${phase}` : null,
         chipControl: this.context.flow.state === State.AIMING ? { active: this.chip, disabled: Boolean(this.points) } : null,
-        help: { steps: [{ title: '1. Hold for power', detail: '60% to 100% in 0.8 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks your power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
+        help: { steps: [{ title: '1. Hold for power', detail: '60% → 100% → 60% every 1.5 seconds' }, { title: '2. Draw to aim', detail: 'Movement locks the current power' }, { title: '3. Release to shoot', detail: 'Finish higher for height' }],
           guide: 'Goal bottom = ground · Goal top = high · CHIP = lob',
-          detail: 'Start at 60% power, or hold for up to 0.8 seconds to reach 100%. Draw without lifting to lock power, then release to shoot. Higher power is faster but allows less curve. Draw straight or curve around defenders. The solid line and AIM marker show your aiming intention, not the exact ball flight. On touchscreens the aim lifts above your finger. Release shoots using your last aim. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
+          detail: 'Power starts at 60% and continuously cycles to 100% and back to 60% every 1.5 seconds while holding. It reaches 100% after 0.75 seconds and immediately falls again. Begin drawing at the power you want, without lifting, to lock that value. Release to shoot with the locked power. Higher power is faster but allows less curve. Draw straight or curve around defenders. The solid line and AIM marker show your aiming intention, not the exact ball flight. On touchscreens the aim lifts above your finger. Release shoots using your last aim. Power and curve can carry the real shot away from that target. CHIP is slower and rises higher. The keeper can still save it, and high shots can go over the bar.' },
         aimingPath: c.flow.state === State.AIMING && this.points ? this.effectiveAim?.path || null : null,
         aimCursor: c.flow.state === State.AIMING && this.points ? this.aimCursor : null,
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
@@ -252,8 +252,9 @@
       if (this.context.flow.state === State.AIMING) {
         this.tutorialTime = Math.max(0, this.tutorialTime - dt);
         if (this.points && !this.drawing) {
-          this.holdTime = Math.min(.8, this.holdTime + dt);
-          this.power = .6 + .4 * (this.holdTime / .8);
+          this.holdTime += dt;
+          const phase = (this.holdTime % 1.5) / .75;
+          this.power = .6 + .4 * (1 - Math.abs(phase - 1));
         }
       }
       if (this.chip && this.context.flow.state === State.BALL_IN_MOTION) {

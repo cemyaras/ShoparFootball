@@ -1043,6 +1043,22 @@ test('native transport keeps idle highlights inert and uses the released drag po
   assert.equal(g.kick, g.play.kick); assert.equal(g.controlled, g.play.controlled);
 });
 
+test('native canvas guards prevent selection and dragging without intercepting sibling controls', () => {
+  const {game:g,elements,document}=fixture();start(g,10);
+  for(const type of ['contextmenu','selectstart','dragstart']) {
+    let prevented=0;
+    g.canvas.dispatchEvent({type,preventDefault(){prevented++;}});
+    assert.equal(prevented,1);
+    elements.get('chip-button').dispatchEvent({type,preventDefault(){prevented++;}});
+    elements.get('help-dialog').dispatchEvent({type,preventDefault(){prevented++;}});
+    document.dispatchEvent({type,preventDefault(){prevented++;}});
+    assert.equal(prevented,1,'prevention belongs only to the canvas');
+  }
+  assert.equal(g.canvas.listenerCount('touchstart'),0);assert.equal(g.canvas.listenerCount('touchmove'),0);
+  g.destroy();
+  for(const type of ['contextmenu','selectstart','dragstart'])assert.equal(g.canvas.listenerCount(type),0);
+});
+
 test('the live renderer bridge preserves facade references and rendering never advances any highlight', () => {
   for (let index = 0; index < 11; index++) {
     const { game: g } = fixture(); start(g, index);
@@ -1350,7 +1366,7 @@ function drawElevatedShot(g, x, height, chip = false, bend = 0, power = .6) {
   if (chip) g.controller.handleInput({ type: 'chip-toggle' });
   const start = { x: g.ball.x, y: g.ball.y }, y = 84 - height * .52;
   g.onPointerDown(defensePointer(g, start));
-  if (power > .6) g.update((power - .6) / .4 * .8);
+  if (power > .6) g.update((power - .6) / .4 * .75);
   for (let i = 1; i <= 30; i++) {
     const t = i / 30;
     g.onPointerMove(defensePointer(g, { x: start.x + (x - start.x) * t + bend * Math.sin(Math.PI * t), y: start.y + (y - start.y) * t }));
@@ -1437,7 +1453,7 @@ test('Draw the Shot holds to charge, ignores jitter and locks power throughout o
   assert.equal(g.controllerPresentation().shotPower.value,.6);assert.equal(g.controllerPresentation().shotTutorial,null);
   g.onPointerMove(defensePointer(g,{x:start.x+4/g.view.scale,y:start.y}));
   assert.equal(g.controller.drawing,false);assert.equal(g.controller.route,null);
-  g.update(.4);assert.ok(Math.abs(g.controller.power-.8)<1e-9);
+  g.update(.375);assert.ok(Math.abs(g.controller.power-.8)<1e-9);
   g.onPointerMove(defensePointer(g,end));assert.equal(g.controller.drawing,true);
   const locked=g.controller.power,preview=JSON.stringify(g.controller.shot.preview);
   g.update(.6);assert.equal(g.controller.power,locked);assert.equal(JSON.stringify(g.controller.shot.preview),preview);
@@ -1445,8 +1461,10 @@ test('Draw the Shot holds to charge, ignores jitter and locks power throughout o
   assert.ok(g.pointer);g.onPointerUp(defensePointer(g,end));assert.equal(g.state,'BALL_IN_MOTION');assert.equal(g.pointer,null);
   until(g,()=>g.state==='RESULT');g.nextHighlight();g.update(.9);
   assert.equal(g.controller.power,.6);assert.equal(g.controllerPresentation().shotTutorial,null);
-  g.onPointerDown(defensePointer(g,{x:g.ball.x,y:g.ball.y}));g.update(.8);assert.equal(g.controller.power,1);
-  g.update(2);assert.equal(g.controller.power,1);
+  g.onPointerDown(defensePointer(g,{x:g.ball.x,y:g.ball.y}));g.update(.75);assert.equal(g.controller.power,1);
+  g.update(.375);assert.ok(Math.abs(g.controller.power-.8)<1e-9);
+  g.update(.375);assert.equal(g.controller.power,.6);
+  g.update(.75);assert.equal(g.controller.power,1);
   g.cancelPointer(g.pointer.id);assert.equal(g.controller.power,.6);assert.equal(g.controllerPresentation().shotPower,null);assert.equal(g.state,'AIMING');
 });
 
@@ -1469,7 +1487,7 @@ test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or movi
     g.startPractice(10);g.update(.9);g.resize();
     const start={x:g.ball.x,y:g.ball.y},scale=g.view.scale;
     const touch=p=>({...defensePointer(g,p),pointerType:'touch'});
-    g.onPointerDown(touch(start));g.update(.4);
+    g.onPointerDown(touch(start));g.update(.375);
     g.onPointerMove(touch({x:start.x,y:start.y-3/scale}));
     assert.equal(g.controller.drawing,false);
     assert.equal(g.controllerPresentation().aimCursor.x,start.x);assert.equal(g.controllerPresentation().aimCursor.y,start.y);
@@ -1483,7 +1501,7 @@ test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or movi
     }
     const end={x:415,y:84-90*.52+95/scale};
     // Start a fresh straight stroke toward the corner after checking the lift ramp.
-    g.cancelPointer(g.pointer.id);g.onPointerDown(touch(start));g.update(.4);
+    g.cancelPointer(g.pointer.id);g.onPointerDown(touch(start));g.update(.375);
     for(let i=1;i<=30;i++) {
       const t=i/30;g.onPointerMove(touch({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t}));
     }
@@ -1578,14 +1596,14 @@ test('Draw the Shot produces identical paths, shots and flight from identical ef
       const start={x:touch.ball.x,y:touch.ball.y},scale=touch.view.scale;
       const end=drag<300?{x:start.x,y:start.y-drag/scale}:{x:500,y:84-targetHeight*.52+95/scale};
       const event=(g,p,pointerType)=>({...defensePointer(g,p),pointerType});
-      touch.onPointerDown(event(touch,start,'touch'));touch.update((power-.6)*2);
+      touch.onPointerDown(event(touch,start,'touch'));touch.update((power-.6)/.4*.75);
       for(let i=1;i<=30;i++) {
         const t=i/30;
         touch.onPointerMove(event(touch,{x:start.x+(end.x-start.x)*t+bend*Math.sin(Math.PI*t),y:start.y+(end.y-start.y)*t},'touch'));
       }
       // Replay the normalized stroke to the mouse. Only input normalization may differ.
       const points=touch.controller.effectiveAim.points.map(p=>({...p}));
-      mouse.onPointerDown(event(mouse,start,'mouse'));mouse.update((power-.6)*2);
+      mouse.onPointerDown(event(mouse,start,'mouse'));mouse.update((power-.6)/.4*.75);
       for(const p of points.slice(1))mouse.controller.handleInput({type:'move',point:p,pointerType:'mouse'});
       for(const g of [touch,mouse]) {
         assertTouchAim(g);

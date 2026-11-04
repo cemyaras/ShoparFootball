@@ -9,6 +9,50 @@ const { DrawShotController: Controller, Physics } = window.ShoparFootball;
 const wave = (samples, amplitude = 45, cycles = 2) => Array.from({length:samples+1},(_,i)=>({x:500+amplitude*Math.sin(cycles*Math.PI*i/samples),y:365-281*i/samples}));
 function close(a,b,tolerance=1e-7) { assert.ok(Math.abs(a-b)<tolerance, `${a} differs from ${b}`); }
 
+function heldController(pointerType = 'mouse') {
+  const controller = new Controller({ flow: { state: 'AIMING' }, ball: { x: 500, y: 365, z: 0, vz: 0 }, player: { x: 500, y: 365 },
+    view: { scale: 1, x: 0, y: 0, width: 1000, height: 740 }, physics: Physics });
+  controller.handleInput({ type: 'down', point: { x: 500, y: 365 }, pointerType });
+  return controller;
+}
+
+test('held power repeats a 1.5 second triangle wave at different frame rates for mouse and touch', () => {
+  const checkpoints = [[0,.6],[.375,.8],[.75,1],[1.125,.8],[1.5,.6],[1.875,.8],
+    [2.25,1],[2.625,.8],[3,.6],[6.375,.8]];
+  for (const pointerType of ['mouse','touch']) for (const fps of [20,30,60,120,144]) {
+    const c = heldController(pointerType); let elapsed = 0;
+    for (const [time,power] of checkpoints) {
+      while (time - elapsed > 1e-10) {
+        const dt = Math.min(1 / fps, time - elapsed); c.update(dt); elapsed += dt;
+        assert.ok(c.power >= .6 && c.power <= 1);
+      }
+      close(c.power,power); close(c.getPresentation().shotPower.value,power);
+      assert.equal(c.drawing,false);
+    }
+  }
+});
+
+test('power immediately reverses at both extrema and locks on either half of the cycle', () => {
+  for (const time of [.75,1.5,2.25,3]) {
+    const c = heldController(); c.update(time - .001); const before = c.power;
+    c.update(.001); const at = c.power; c.update(.001); const after = c.power;
+    if (time % 1.5 === 0) { close(at,.6); assert.ok(before > at && after > at); }
+    else { close(at,1); assert.ok(before < at && after < at); }
+    close(before,after);
+  }
+  for (const pointerType of ['mouse','touch']) for (const time of [.375,1.125,2.625]) {
+    const c = heldController(pointerType); c.update(time);
+    c.handleInput({ type: 'move', point: { x: 504, y: 365 } });
+    assert.equal(c.drawing,false); close(c.power,.8);
+    c.handleInput({ type: 'move', point: { x: 500, y: 200 } });
+    const locked = c.power, shot = JSON.stringify(c.shot), path = JSON.stringify(c.effectiveAim);
+    assert.equal(c.drawing,true); close(locked,.8);
+    c.update(4.75); assert.equal(c.power,locked);
+    assert.equal(c.getPresentation().shotPower.locked,true);
+    assert.equal(JSON.stringify(c.shot),shot); assert.equal(JSON.stringify(c.effectiveAim),path);
+  }
+});
+
 test('balanced S strokes and small hand tremors resolve to a straight natural shot', () => {
   const curve = Controller.buildRoute(wave(80)), straight = Controller.buildRoute(wave(80,0));
   assert.ok(curve); assert.ok(straight);

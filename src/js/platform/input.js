@@ -11,7 +11,8 @@
       game.listen(game.canvas, 'pointerup', e => game.onPointerUp(e));
       game.listen(game.canvas, 'pointercancel', e => game.cancelPointer(e.pointerId));
       game.listen(game.canvas, 'lostpointercapture', e => { if (game.pointer?.id === e.pointerId) game.cancelPointer(e.pointerId); });
-      game.listen(game.canvas, 'contextmenu', e => e.preventDefault());
+      // Suppress browser selection/drag UI on the pitch, leaving sibling controls usable.
+      for (const type of ['contextmenu', 'selectstart', 'dragstart']) game.listen(game.canvas, type, e => e.preventDefault());
     }
     bindWindow() {
       const game = this.game;
