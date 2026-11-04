@@ -5,6 +5,8 @@
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const SAMPLE_DISTANCE = 8;
   const MIN_RADIUS = 24;
+  // Draw-shot turning rate, initial strength, decay per second and landing retention.
+  const SHOT_SPIN = Object.freeze({ turnRate: 1.8, strength: 1.1, decay: .2, landingRetention: .65 });
   const POSITIONS = [
     { player: [500, 365], defender: [530, 235] },
     { player: [360, 400], defender: [455, 255] },
@@ -83,7 +85,7 @@
   }
   function turnShot(ball, spin, dt) {
     const speed = Math.hypot(ball.vx, ball.vy);
-    const angle = spin * 1.8 * Math.min(1.3, 600 / Math.max(300, speed)) * dt;
+    const angle = spin * SHOT_SPIN.turnRate * Math.min(1.3, 600 / Math.max(300, speed)) * dt;
     const cos = Math.cos(angle), sin = Math.sin(angle), vx = ball.vx;
     ball.vx = vx * cos - ball.vy * sin; ball.vy = vx * sin + ball.vy * cos;
   }
@@ -97,7 +99,7 @@
       turnShot(ball, spin, step / 2);
       ball.spin = 0; // Avoid applying the shared NSS spin model a second time.
       const contact = physics.integrateBall(ball, step);
-      ball.spin = spin * Math.exp(-.65 * step) * (contact ? .65 : 1);
+      ball.spin = spin * Math.exp(-SHOT_SPIN.decay * step) * (contact ? SHOT_SPIN.landingRetention : 1);
       turnShot(ball, ball.spin, step / 2);
       impact = contact || impact;
     }
@@ -120,7 +122,7 @@
     const chord = Math.atan2(target.y - start.y, target.x - start.x);
     const bend = Math.atan2(Math.sin(route.heading - chord), Math.cos(route.heading - chord));
     const heading = chord + bend * .65;
-    const spin = Math.abs(bend) < .01 ? 0 : -clamp(bend / .73, -1, 1) * 1.1 * (1 - .55 * charge) * (chip ? .45 : 1);
+    const spin = Math.abs(bend) < .01 ? 0 : -clamp(bend / .73, -1, 1) * SHOT_SPIN.strength * (1 - .55 * charge) * (chip ? .45 : 1);
     const airborne = chip || targetHeight > 6;
     // Height represents a neutral-power aiming reference, not a solved arrival condition.
     const span = distance(start, target);

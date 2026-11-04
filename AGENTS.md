@@ -1,6 +1,7 @@
 # Project rules
 
 - Read only files relevant to the task. Avoid rereading entire source trees or documentation.
+- After every completed project change, update the version timestamp in `index.html` using Europe/Istanbul time. Keep the machine-readable `datetime` and visible TR timestamp synchronized; include seconds when needed to distinguish changes within the same minute.
 - Preserve gameplay, physics constants, controls, timing, and draw order during refactors.
 - Keep vanilla JavaScript, classic deferred scripts, offline operation, and `file://` support. Resolve browser assets relative to `index.html` for GitHub Pages subdirectories.
 - Use `window.ShoparFootball` for newly extracted modules. Keep `window.footballGame` and its regression-test inspection surface compatible.

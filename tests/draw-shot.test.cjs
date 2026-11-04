@@ -131,6 +131,83 @@ function crossing(shot, fps=240) {
   return {x:previous.x+(ball.x-previous.x)*t,z:previous.z+(ball.z-previous.z)*t,vz:ball.vz,time:ball.age,peak};
 }
 
+function curvedPoints(bend, height = 0, endX = 500) {
+  return Array.from({length:81},(_,i)=>{
+    const t=i/80;
+    return {x:500+(endX-500)*t+bend*Math.sin(Math.PI*t),y:377+(84-height*.52-377)*t};
+  });
+}
+function flightSamples(shot, fps = 240) {
+  const {ball,controller}=launch(shot),samples=[{...ball}];
+  for(let i=0;i<fps*4&&ball.y>=84;i++){controller.integrateShot(1/fps);samples.push({...ball});}
+  assert.ok(ball.y<84,'test flight reaches the goal plane');
+  return samples;
+}
+function headingChange(a,b) {
+  const delta=Math.atan2(b.vy,b.vx)-Math.atan2(a.vy,a.vx);
+  return Math.atan2(Math.sin(delta),Math.cos(delta));
+}
+
+test('straight, slight and strong gestures have distinct continuous late bend without endpoint seeking', () => {
+  for(const [chip,height] of [[false,0],[false,90],[true,90]]) for(const power of [.6,1]) {
+    const lateTurns=[];
+    for(const bend of [0,12,80]) {
+      const shot=Controller.buildShot(curvedPoints(bend,height),chip,Physics,power),samples=flightSamples(shot);
+      const first=samples[0],last=samples.at(-1),half=samples.find(p=>p.y<=(first.y+84)/2);
+      const quarter=samples.find(p=>p.y<=84+(first.y-84)/4);
+      const early=Math.abs(headingChange(first,half)),late=Math.abs(headingChange(half,last));
+      lateTurns.push(Math.abs(headingChange(quarter,last)));
+      if(!bend) {
+        assert.ok(samples.every(p=>Math.abs(p.x-500)<1e-8&&p.spin===0));
+        close(late,0);
+      } else {
+        assert.ok(late>=early*.75,'second half retains a visible share of the bend');
+        assert.ok(Math.abs(last.spin/shot.spin)>.7,'spin persists through the goal approach');
+        assert.ok(Math.abs(last.spin)<Math.abs(shot.spin),'spin still decays gradually');
+        for(let i=1;i<samples.length;i++)assert.ok(headingChange(samples[i-1],samples[i])<0,'velocity keeps turning in the spin direction');
+        if(bend===80)assert.ok(Math.abs(last.x-shot.target.x)>2,'the drawn endpoint does not attract the ball');
+      }
+    }
+    assert.ok(lateTurns[1]>lateTurns[0]);
+    assert.ok(lateTurns[2]>lateTurns[1]*2,'strong bend remains distinct near goal');
+    assert.ok(lateTurns[2]>Math.PI/60,'strong shot still turns more than three degrees in its final quarter');
+  }
+});
+
+test('opposite spins mirror their complete flight at different frame rates and power still limits bending', () => {
+  for(const [chip,height] of [[false,0],[false,90],[true,90]]) for(const power of [.6,.8,1]) {
+    for(const fps of [30,60,120]) {
+      const a=flightSamples(Controller.buildShot(curvedPoints(80,height),chip,Physics,power),fps);
+      const b=flightSamples(Controller.buildShot(curvedPoints(-80,height),chip,Physics,power),fps);
+      assert.equal(a.length,b.length);
+      for(let i=0;i<a.length;i++) {
+        close(a[i].x+b[i].x,1000);close(a[i].y,b[i].y);close(a[i].z,b[i].z);
+        close(a[i].vx,-b[i].vx);close(a[i].vy,b[i].vy);close(a[i].spin,-b[i].spin);
+      }
+    }
+    const low=Controller.buildShot(curvedPoints(80,height),chip,Physics,.6);
+    const high=Controller.buildShot(curvedPoints(80,height),chip,Physics,1);
+    const slow=flightSamples(low),fast=flightSamples(high);
+    assert.ok(high.speed>low.speed);assert.ok(Math.abs(high.spin)<Math.abs(low.spin));
+    assert.ok(Math.abs(headingChange(fast[0],fast.at(-1)))<Math.abs(headingChange(slow[0],slow.at(-1))));
+  }
+});
+
+test('excessive curve can miss an inside-goal aim and landings retain shared bounce behavior', () => {
+  for(const sign of [-1,1]) {
+    const end=500-sign*85;
+    const straight=Controller.buildShot(curvedPoints(0,90,end),false,Physics);
+    const curved=Controller.buildShot(curvedPoints(sign*80,90,end),false,Physics);
+    const a=crossing(straight),b=crossing(curved);
+    assert.equal(Physics.goalLineOutcome(a.x,a.z),'goal');
+    assert.equal(Physics.goalLineOutcome(b.x,b.z),'wide');
+  }
+  const shot=Controller.buildShot(curvedPoints(40),false,Physics),{ball,controller}=launch(shot);
+  Object.assign(ball,{z:1,vz:-150});const spin=ball.spin;
+  assert.ok(controller.integrateShot(.01));
+  assert.ok(ball.vz>0);close(ball.spin/spin,.65*Math.exp(-.2*.01));
+});
+
 test('physical ground flight matches the short preview at 30, 60 and 120 FPS and accepts velocity changes', () => {
   const shot=Controller.buildShot(wave(80,70,1),false,Physics),states=[];
   for(const fps of [30,60,120]) {
@@ -144,6 +221,18 @@ test('physical ground flight matches the short preview at 30, 60 and 120 FPS and
     c.integrateShot(.1);close(ball.x,free.x);close(ball.y,free.y);
   }
   for(const state of states.slice(1)){close(state.x,states[0].x);close(state.y,states[0].y);}
+});
+
+test('runtime spin matches every preview point including its final partial timestep', () => {
+  for(const [chip,height] of [[false,0],[false,90],[true,90]]) for(const bend of [0,12,80]) {
+    const shot=Controller.buildShot(curvedPoints(bend,height),chip,Physics,.8),{ball,controller}=launch(shot);
+    const end=shot.preview.at(-1).time;
+    assert.ok(end-shot.preview.at(-2).time<1/120);
+    for(const p of shot.preview.slice(1)) {
+      controller.integrateShot(Math.min(1/120,end-ball.age));
+      close(ball.x,p.x);close(ball.y,p.y);close(ball.z,p.z);close(ball.age,p.time);
+    }
+  }
 });
 
 test('flight continues after the preview without seeking the intended endpoint', () => {

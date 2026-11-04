@@ -1289,7 +1289,7 @@ function drawShot(g, x, bend = 0) {
 }
 
 test('Draw the Shot launches directly, resolves physically at all frame rates and retries independently', () => {
-  for (const fps of [30, 60, 120]) for (const [x, bend, expected] of [[430, 40, 'goal'], [415, 40, 'post'], [420, 0, 'save'], [530, 0, 'blocked'], [800, 0, 'wide']]) {
+  for (const fps of [30, 60, 120]) for (const [x, bend, expected] of [[440, 40, 'goal'], [430, 40, 'post'], [415, 40, 'wide'], [420, 0, 'save'], [530, 0, 'blocked'], [800, 0, 'wide']]) {
     const { game: g, elements } = fixture(); g.startPractice(10); g.update(.9);
     assert.equal(elements.get('chapter-number').textContent, '11/11');
     assert.match(elements.get('bottom-hint').textContent, /Draw from the ball/);
@@ -1362,6 +1362,24 @@ test('Draw the Shot can follow a drawn detour around a defender blocking the dir
   assert.ok(['goal', 'save', 'post', 'wide'].includes(g.resolution.kind));
 });
 
+test('Draw the Shot defenders collide with the physical curve away from the visual aiming path', () => {
+  const {game:g}=fixture();g.startPractice(10);g.update(.9);drawShot(g,415,80);
+  const c=g.controller,path=c.effectiveAim.path,probe={...g.ball};
+  const free=new c.constructor({ball:probe,physics:c.context.physics,resultDelay:{pending:false}});free.route=c.route;
+  let target=null,gap=0;
+  for(let i=0;i<240;i++) {
+    free.integrateShot(1/240);
+    const separation=Math.min(...path.map(p=>Math.hypot(p.x-probe.x,p.y-probe.y)));
+    if(probe.y>110&&probe.x>100&&probe.x<900&&separation>gap){target={x:probe.x,y:probe.y};gap=separation;}
+  }
+  assert.ok(gap>40,'the collision point is well away from the aiming intention');
+  Object.assign(g.defenders[0],{x:target.x,y:target.y+7});g.keeper.x=950;
+  c.updateAI=()=>{};
+  until(g,()=>Boolean(g.pendingResult));
+  assert.equal(g.resolution.kind,'blocked');
+  assert.ok(Math.hypot(g.ball.x-target.x,g.ball.y-target.y)<22);
+});
+
 function drawElevatedShot(g, x, height, chip = false, bend = 0, power = .6) {
   if (chip) g.controller.handleInput({ type: 'chip-toggle' });
   const start = { x: g.ball.x, y: g.ball.y }, y = 84 - height * .52;
@@ -1376,7 +1394,7 @@ function drawElevatedShot(g, x, height, chip = false, bend = 0, power = .6) {
 
 test('Draw the Shot elevated and chip attempts resolve through real keeper, defender and frame contacts', () => {
   const cases = [[415,90,false,'goal'],[500,60,false,'save'],[530,0,false,'blocked'],[415,112,false,'bar'],
-    [400,90,false,'post'],[500,140,false,'high'],[500,90,true,'goal'],[500,30,true,'save'],[500,140,true,'high'],[415,90,false,'goal',40],[500,90,false,'goal',80,.6],[500,90,false,'save',35,.8],[500,90,false,'post',80,1]];
+    [400,90,false,'post'],[500,140,false,'high'],[500,90,true,'goal'],[500,30,true,'save'],[500,140,true,'high'],[420,90,false,'goal',40],[415,90,false,'post',40],[500,90,false,'goal',80,.6],[500,90,false,'save',35,.8],[500,90,false,'post',80,1]];
   for (const fps of [30,60,120]) for (const [x,height,chip,kind,bend = 0,power = .6] of cases) {
     const { game: g } = fixture(); g.startPractice(10); g.update(.9);
     drawElevatedShot(g,x,height,chip,bend,power);
