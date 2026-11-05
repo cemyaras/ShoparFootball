@@ -27,6 +27,7 @@ To try the game on a phone or tablet, connect it to the same local network as yo
 - Completed passes transfer control to the receiver, who can shoot or return the ball.
 - Goalkeeper, defender, and teammate behavior supports each highlight.
 - Two of the five attacking highlights feature a keeper off the line, leaving space for a soft chip. The other three keep a deeper goalkeeper; restarts preserve the position.
+- A fixed diagonal 2.5D camera on every device, a deep goal with side and top nets, and block-style players, opponents and keepers.
 - Responsive layouts, high-DPI Canvas rendering, and shared Pointer Events input for mouse and touch.
 - Three selectable venues: a striped stadium, an asphalt street court, and a dirt ground.
 - Sunny, cloudy, rainy, and snowy weather, with procedural lighting, puddles, and snowfall.

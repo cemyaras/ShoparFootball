@@ -137,7 +137,7 @@ test('perspective goal paints each net panel once across its two layers', () => 
 });
 
 test('perspective rendering preserves frozen world state at every preview angle', () => {
-  for (const angle of [12, 20, 25]) {
+  for (const angle of [12, 20, 25, 30]) {
     const h = headless({}, angle);
     freeze(h.world);
     const before = JSON.stringify(h.world);
@@ -166,4 +166,29 @@ test('net deformation stays on the struck panel, fixes its anchors and expires',
   assert.equal(JSON.stringify(world.resolution), before);
   impact.time = scene.time - .46;
   assert.deepEqual(draw(), still);
+});
+
+test('opponents and keepers use the block sprite style under a projection and stay flat without one', () => {
+  const solids = (angle, pick) => {
+    const h = headless({}, angle);
+    h.renderer.drawPlayer(h.scene.ctx, pick(h.world));
+    return h.log.filter(call => call[0] === 'closePath').length;
+  };
+  for (const pick of [world => ({ ...world.player, team: 'red', number: 4 }), world => world.keeper, world => world.mates[0]]) {
+    assert.ok(solids(30, pick) > 0);
+    assert.equal(solids(undefined, pick), 0);
+  }
+});
+
+test('a ball beyond the right post is drawn after the near net while one inside the mouth is drawn before it', () => {
+  for (const [x, before] of [[500, true], [640, false]]) {
+    const h = headless({}, 30);
+    Object.assign(h.world.ball, { x, y: 70, z: 5 });
+    const order = [];
+    for (const name of ['drawPitch', 'drawTrail', 'drawBallShadow', 'drawGoalFront']) h.renderer[name] = () => {};
+    h.renderer.drawGoalBack = (_c, near) => near && order.push('near-net');
+    h.renderer.drawBall = () => order.push('ball'); h.renderer.drawPlayer = () => {};
+    h.renderer.render();
+    assert.equal(order.indexOf('ball') < order.indexOf('near-net'), before);
+  }
 });

@@ -10,7 +10,7 @@
   const BALL_GRAVITY = 260, MISS_PLAYBACK = .42;
   // Projected mouth: 200 × 58.24; standing keeper: 40.7 units tall.
   // Net depth is separate from upright height; all heights use the ball's projection.
-  const GOAL = Object.freeze({ height: 112, depth: 24, postWidth: 5, keeperScale: 1.1, keeperOffset: 16, keeperReach: 70, keeperReaction: .28 });
+  const GOAL = Object.freeze({ height: 112, depth: 48, postWidth: 5, keeperScale: 1.1, keeperOffset: 16, keeperReach: 70, keeperReaction: .28 });
   // Keep player/ball proportions in world space, independent of viewport or DPR.
   const SPRITES = Object.freeze({ playerHeight: 37, farScale: 1.1, nearScale: 1.6, ballToPlayer: .23, maxAirScale: 1.18, airGrowth: .0018, footOffset: 10 });
   const FIELD = { left: 76, right: 924, top: 84, bottom: 684, goalLeft: 400, goalRight: 600, crossbar: GOAL.height };

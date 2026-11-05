@@ -30,7 +30,16 @@
     get palette() { return PITCHES[this.pitch]; }
     get forecast() { return WEATHER[this.weather]; }
     get label() { return `${this.palette.name} · ${this.forecast.name}`; }
-    drawRunoff(c) {
+    drawRunoff(c, wide = false) {
+      if (wide) {
+        // The angled camera shows ground beyond the touchlines and in front of the pitch.
+        c.fillStyle = this.pitch === 'street' ? '#394148' : this.pitch === 'dirt' ? '#7d6240' : '#1d3823';
+        c.fillRect(-1500, -32, 4000, 3500);
+        if (this.pitch === 'stadium') {
+          c.fillStyle = 'rgba(255,255,255,.03)';
+          for (let y = -32; y < 2000; y += 120) c.fillRect(-1500, y, 4000, 60);
+        }
+      }
       // A short apron behind the net, bounded by the existing venue backdrop.
       c.fillStyle = this.pitch === 'street' ? '#465057' : this.pitch === 'dirt' ? '#9c784f' : '#28482e';
       c.fillRect(76, -32, 848, 116);
@@ -45,7 +54,7 @@
       } else c.translate(0, rearOffset);
       if (this.pitch === 'street') {
         // Apartment fronts, a painted brick wall, and chain-link fencing.
-        for (let i = 0; i < 10; i++) {
+        for (let i = projection ? -4 : 0; i < (projection ? 14 : 10); i++) {
           const x = 36 + i * 96;
           c.fillStyle = ['#58636b', '#746b62', '#4c5962'][i % 3]; c.fillRect(x, -100, 90, 100);
           c.fillStyle = '#c1af7d';
@@ -66,8 +75,8 @@
         for (let x = 48; x <= 952; x += 113) { c.beginPath(); c.moveTo(x, -35); c.lineTo(x, 78); c.stroke(); }
         c.fillStyle = '#a4a79e'; c.fillRect(48, 77, 904, 5);
       } else if (this.pitch === 'dirt') {
-        c.fillStyle = '#92916a'; c.fillRect(0, -100, 1000, 178);
-        for (let i = 0; i < 15; i++) {
+        c.fillStyle = '#92916a'; c.fillRect(projection ? -1000 : 0, -100, projection ? 3000 : 1000, 178);
+        for (let i = projection ? -12 : 0; i < (projection ? 27 : 15); i++) {
           const x = 15 + i * 72, y = -10 + i % 3 * 8;
           c.fillStyle = '#67533b'; c.fillRect(x - 3, y - 4, 6, 58);
           c.fillStyle = i % 2 ? '#4c6446' : '#5c744b'; c.beginPath(); c.arc(x, y - 12, 27 + i % 4 * 3, 0, Math.PI * 2); c.fill();

@@ -49,6 +49,16 @@
       }
       return nearest;
     }
+    nearestOnScreen(point, radius) {
+      if (!point) return null;
+      const project = this.context.geometry.worldToScreen;
+      let nearest = null;
+      for (const mate of this.context.mates) {
+        const gap = distance(point, project({ x: mate.x, y: mate.y, z: 20 }));
+        if (gap <= radius) { radius = gap; nearest = mate; }
+      }
+      return nearest;
+    }
     handleInput(input) {
       if (this.phase !== 'aiming') return { handled: false };
       if (input.type === 'down') {
@@ -58,7 +68,8 @@
         this.holding = true; this.holdTime = 0; this.power = 0;
         this.target = { x, y };
         this.finger = input.pointerType === 'touch' ? this.target : null;
-        this.receiver = this.nearestMate(this.target, 32);
+        // Squashed depth can leave a visible teammate far in world units, so allow 36 CSS pixels too.
+        this.receiver = this.nearestMate(this.target, 32) || this.nearestOnScreen(input.screenPoint, 36);
         this.passType = this.receiver ? 'normal' : 'through';
         return { handled: true, capture: true, updateOnRelease: false };
       }

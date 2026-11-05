@@ -70,3 +70,17 @@ test('shot aim joins ground and goal height at both posts and unfolds a straight
     }
   }
 });
+
+test('the fixed 30 degree / .52 camera inverts ground points and keeps height lift', () => {
+  const { Projection, Viewport } = fixture();
+  assert.equal(Viewport.CAMERA.yaw, 30); assert.equal(Viewport.CAMERA.ground, .52);
+  const p = Projection.create(Viewport.CAMERA.yaw, Viewport.CAMERA.ground);
+  for (const [x, y] of [[76, 84], [924, 684], [500, 84], [310, 400]]) {
+    const ground = p.project({ x, y }), high = p.project({ x, y, z: 112 });
+    const inverse = p.toGround(ground);
+    close(inverse.x, x); close(inverse.y, y);
+    close(ground.y - high.y, 112 * .52);
+    const goal = p.toGoal(p.project({ x, y: 84, z: 40 }));
+    close(goal.x, x); close(goal.z, 40);
+  }
+});

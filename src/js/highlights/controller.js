@@ -23,6 +23,8 @@
     const celebrating = actor.celebration > 0, diving = actor.team === 'keeper' && actor.dive > 0;
     return {
       hidden: activity.hidden, keeperHands: activity.keeperHands,
+      // Blue outfielders show their backs while attacking; opponents and keepers face the camera.
+      facing: activity.facing ?? (actor.team === 'blue' ? 'away' : 'toward'),
       controlled: actor === play.controlled && ![State.TITLE, State.BALL_CONTACT].includes(state),
       moving, kicking: play.kicker === actor && play.motionTime < .28 || activity.kicking,
       celebrating, hop: activity.hop ?? (celebrating ? -Math.abs(Math.sin(actor.celebration * 10)) * 9 : 0),

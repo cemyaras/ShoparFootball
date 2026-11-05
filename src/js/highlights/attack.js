@@ -20,13 +20,16 @@
     }
     cameraPresentation() {
       const followBall = this.context.flow.state === State.BALL_IN_MOTION;
-      return { lock: !followBall, followBall, anchors: followBall ? this.flightAnchors : null };
+      return { lock: !followBall, followBall, anchors: followBall ? this.flightAnchors : null, dragRoom: true };
     }
     handleInput(input) {
       const c = this.context, play = c.play, p = input.point;
       if (input.type === 'down') {
         if (c.flow.state === State.AIMING) {
-          if (distance(p, c.ball) > Math.max(55, 44 / c.view.scale)) { c.feedback.toast('Start your drag near the glowing ball.', 1.8); return { handled: false }; }
+          // The angled camera squashes depth, so also accept a grab within 44 CSS pixels of the drawn ball.
+          const near = distance(p, c.ball) <= Math.max(55, 44 / c.view.scale)
+            || (input.screenPoint && distance(input.screenPoint, c.geometry.worldToScreen(c.ball)) <= 44);
+          if (!near) { c.feedback.toast('Start your drag near the glowing ball.', 1.8); return { handled: false }; }
           play.aim = { dx: 0, dy: -1, power: 0, distance: 0 };
           return { handled: true, capture: true, updateOnRelease: true };
         }

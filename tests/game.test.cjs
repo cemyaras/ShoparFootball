@@ -94,12 +94,13 @@ function shot(options) {
 }
 
 test('a corner goal visibly enters the net and falls to the ground', () => {
-  const { game: g } = shot({ x: 420 });
+  const { game: g, window } = shot({ x: 420 });
+  const { FIELD, GOAL } = window.ShoparFootball.Core;
   assert.equal(g.resolution.kind, 'goal');
   assert.equal(g.stats.goals, 1);
   g.update(.25);
   assert.equal(g.resolution.netHit, true);
-  assert.ok(g.ball.y < 84 && g.ball.y >= 60);
+  assert.ok(g.ball.y < FIELD.top && g.ball.y >= FIELD.top - GOAL.depth);
   until(g, () => g.state === 'RESULT');
   assert.ok(g.ball.z < 3);
   assert.ok(g.ball.y < 70, 'the net should absorb the ball and keep it deep inside');
@@ -1861,8 +1862,10 @@ test('goals from either side use the same physical net and record a single surfa
     assert.equal(game.resolution.netImpact, null);
     until(game, () => game.resolution.netHit);
     const impact = game.resolution.netImpact;
-    assert.equal(impact.surface, 'back');
-    assert.equal(impact.y, FIELD.top - GOAL.depth);
+    // A deeper net lets a ball near a post meet the side panel first; each impact lies on its own panel plane.
+    const plane = { back: ['y', FIELD.top - GOAL.depth], left: ['x', FIELD.goalLeft], right: ['x', FIELD.goalRight] }[impact.surface];
+    assert.ok(plane, 'impact surface ' + impact.surface);
+    assert.equal(impact[plane[0]], plane[1]);
     until(game, () => game.state === 'RESULT');
     assert.equal(game.resolution.netImpact, impact);
     const ball = game.ball, radius = Core.ballGeometry({ ...ball, z: 0 }).groundRadius;
@@ -1897,4 +1900,30 @@ test('pass framing keeps the target inside the safe area and honors reduced moti
     if (reducedMotion) assert.equal(g.view, locked);
     else assert.notEqual(g.view, locked);
   }
+});
+
+test('the fixed camera keeps Phase 13 player size on a portrait phone with the ball and goal mouth visible', () => {
+  // Phase 13 scales at 390 x 844 were .90, .72, .69, .81 and .44 for the five attacking highlights.
+  const phase13 = [.90, .72, .69, .81, .44];
+  phase13.forEach((previous, index) => {
+    const { game: g } = fixture(390, 844); start(g, index);
+    assert.ok(g.view.scale >= previous * .9 && g.view.scale <= previous * 1.06, `highlight ${index} scale ${g.view.scale}`);
+    const points = [g.ball, { x: 400, y: 84, z: 112 }, { x: 600, y: 84, z: 112 }, { x: 400, y: 84 }, { x: 600, y: 84 }].map(p => g.worldToScreen(p));
+    for (const p of points) assert.ok(p.x >= 0 && p.x <= 390 && p.y >= 0 && p.y <= 844);
+  });
+});
+
+test('a touch near the drawn ball grabs it even when the squashed depth axis makes it far in world units', () => {
+  const { game: g } = fixture(390, 844); start(g);
+  const centre = g.worldToScreen(g.ball), limit = Math.max(55, 44 / g.view.scale);
+  let best = null;
+  for (let i = 0; i < 32; i++) {
+    const angle = i * Math.PI / 16, point = { x: centre.x + 42 * Math.cos(angle), y: centre.y + 42 * Math.sin(angle) };
+    const world = g.toWorld({ clientX: point.x, clientY: point.y });
+    const gap = Math.hypot(world.x - g.ball.x, world.y - g.ball.y);
+    if (!best || gap > best.gap) best = { point, gap };
+  }
+  assert.ok(best.gap > limit, 'the probe must lie beyond the old world-space radius');
+  g.onPointerDown(screenPointer(best.point));
+  assert.ok(g.aim, 'drag starts from a touch within 44 CSS pixels');
 });

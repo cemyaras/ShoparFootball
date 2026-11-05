@@ -3,6 +3,10 @@
   'use strict';
   const Core = window.ShoparFootball.Core;
   const { clamp, FIELD, State, STADIUM_OFFSET, HEIGHT_PROJECTION, SPRITES } = Core;
+  // One fixed camera for every device: yaw in degrees and ground compression.
+  const CAMERA = Object.freeze({ yaw: 30, ground: .52 });
+  // Phase 13 projection, used only to keep the previous player scale.
+  const REFERENCE = window.ShoparFootball.Projection.create(20, .75);
   // Project world bounds and upright points before fitting the CSS viewport.
   function fitProjection(projection, bounds, points, width, height, maxScale = Infinity) {
     const { left, top } = bounds, right = left + bounds.width, bottom = top + bounds.height;
@@ -29,7 +33,7 @@
   class Viewport {
     constructor(game, definitions) {
       this.game = game; this.definitions = definitions;
-      this.projection = window.ShoparFootball.Projection.create(20);
+      this.projection = window.ShoparFootball.Projection.create(CAMERA.yaw, CAMERA.ground);
       this.view = { scale: 1, x: 0, y: 0, width: 1000, height: 740 };
     }
     bindEvents() {
@@ -69,19 +73,42 @@
       points.push(game.ball, ...(camera?.anchors || []));
       const preferred = { ...bounds, top: Math.max(bounds.top, FIELD.top),
         height: bounds.top + bounds.height - Math.max(bounds.top, FIELD.top) };
-      const next = fitProjection(this.projection, preferred, points, rect.width, usableHeight, maxScale);
-      const minimumScale = .95 * Math.min(maxScale, rect.width / bounds.width, usableHeight / bounds.height);
-      if (next.scale < minimumScale) {
+      const frame = (projection, cap) => {
+        const fitted = fitProjection(projection, preferred, points, rect.width, usableHeight, Math.min(maxScale, cap));
+        const minimumScale = .95 * Math.min(maxScale, cap, rect.width / bounds.width, usableHeight / bounds.height);
         // Let optional runoff crop before shrinking actors below the old framing scale.
-        const required = fitProjection(this.projection,
-          { left: game.ball.x, top: game.ball.y, width: 0, height: 0 },
-          points, rect.width, usableHeight, minimumScale);
-        Object.assign(next, required);
+        return fitted.scale < minimumScale ? Object.assign(fitted, fitProjection(projection,
+          { left: game.ball.x, top: game.ball.y, width: 0, height: 0 }, points, rect.width, usableHeight, minimumScale)) : fitted;
+      };
+      // Players keep the Phase 13 on-screen size; the new angle never enlarges them noticeably.
+      const target = frame(REFERENCE, Infinity).scale;
+      const next = frame(this.projection, target * 1.05);
+      if (next.scale < target * .9) {
+        // Prefer clear action over the full scene: keep only what the play needs visible.
+        const required = [game.ball, ...(camera?.anchors || []), points[0]];
+        if (bounds.top <= FIELD.top) required.push(...Core.goalCorners().slice(0, 4));
+        Object.assign(next, fitProjection(this.projection, { left: game.ball.x, top: game.ball.y, width: 0, height: 0 },
+          required, rect.width, usableHeight, target * .9));
       }
+      this.makeDragRoom(next, game, points, rect, hudTop, usableHeight);
       next.height = rect.height;
       next.y += hudTop;
       game.view = next;
       game.ui.setContactTight(game.compact && rect.height < 300);
+    }
+    // Dragging pulls back toward the lower left, so keep that side of the ball on screen.
+    makeDragRoom(view, game, points, rect, hudTop, usableHeight) {
+      const presentation = game.controllerPresentation();
+      if (!presentation.camera?.dragRoom || presentation.drawToShoot) return;
+      const room = clamp(Math.min(rect.width, rect.height) * .25, 68, 110) + 16;
+      const ball = this.projection.project(game.ball), pad = 8;
+      const projected = points.map(this.projection.project);
+      const left = Math.min(...projected.map(p => p.x)), right = Math.max(...projected.map(p => p.x));
+      const top = Math.min(...projected.map(p => p.y));
+      const screenX = view.x + ball.x * view.scale, screenY = view.y + hudTop + ball.y * view.scale;
+      const shiftX = Math.min(Math.max(0, room - screenX), Math.max(0, rect.width - pad - (view.x + right * view.scale)));
+      const shiftY = Math.max(Math.min(0, rect.height - room - screenY), Math.min(0, hudTop - (view.y + hudTop + top * view.scale)));
+      view.x += shiftX; view.y += shiftY;
     }
     cameraBounds() {
       const game = this.game;
@@ -143,6 +170,7 @@
       return { x: (v.width / 2 - v.x) / v.scale, y: ((top + bottom) / 2 - v.y) / v.scale, r: radius / v.scale };
     }
   }
+  Viewport.CAMERA = CAMERA;
   Viewport.fitProjection = fitProjection;
   Viewport.worldToScreen = worldToScreen;
   Viewport.screenToGround = (view, point) => view.projection.toGround(fromScreen(view, point));

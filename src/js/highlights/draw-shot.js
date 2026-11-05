@@ -261,7 +261,8 @@
         return { handled: true };
       }
       if (input.type === 'down') {
-        if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
+        if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || (distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)
+          && !(input.screenPoint && distance(input.screenPoint, c.geometry.worldToScreen(c.ball)) <= 44))) return { handled: false };
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
         this.screenStroke = c.view.projection && input.screenPoint
           ? [c.geometry.worldToScreen(c.ball)] : null;

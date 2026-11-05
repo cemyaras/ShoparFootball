@@ -3,9 +3,7 @@
   'use strict';
   const { FIELD, HEIGHT_PROJECTION } = window.ShoparFootball.Core;
   const originX = (FIELD.goalLeft + FIELD.goalRight) / 2, originY = FIELD.top;
-  const depthScale = .75;
-
-  function create(angle = 12) {
+  function create(angle = 12, depthScale = .75) {
     const radians = angle * Math.PI / 180;
     const cos = Math.cos(radians), sin = Math.sin(radians);
     const project = ({ x, y, z = 0 }) => ({
@@ -55,9 +53,10 @@
       project,
       ground: Object.freeze([cos, depthScale * sin, -sin, depthScale * cos, origin.x, origin.y]),
       depth: ({ x, y }) => sin * (x - originX) + cos * (y - originY),
-      upright(x, y) {
+      // The y axis plane keeps boards along a touchline parallel to the pitch depth axis.
+      upright(x, y, axis = 'x') {
         const p = project({ x, y });
-        return [cos, depthScale * sin, 0, 1, p.x, p.y];
+        return axis === 'y' ? [-sin, depthScale * cos, 0, 1, p.x, p.y] : [cos, depthScale * sin, 0, 1, p.x, p.y];
       },
       toGround, toGoal, toAim, fromAim, aimStroke,
       goalPlaneDelta({ x, y }) {

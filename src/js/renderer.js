@@ -12,8 +12,8 @@
       const hairColors = ['#212121', '#4e342e', '#ffd54f', '#6d4c41'];
       for (let row = 0; row < 4; row++) {
         const y = 11 + row * 8.5;
-        for (let x = 80; x <= 920; x += 11) {
-          const seed = row * 99 + x;
+        for (let x = -140; x <= 1140; x += 11) {
+          const seed = row * 99 + x + 140;
           crowd.push({
             x: x + ((seed % 5) - 2), y, row,
             shirt: shirtColors[(seed * 7) % shirtColors.length],
@@ -181,10 +181,12 @@
         else this.drawing.drawPlayer(c, actor);
       };
       // The goal mouth separates the net interior from actors on the pitch.
-      for (const actor of layers) if (actor.y < FIELD.top) drawLayer(actor);
+      // Only things inside the goal mouth sit behind the near net; the camera sees past the right post.
+      const inside = actor => actor.y < FIELD.top && actor.x <= FIELD.goalRight;
+      for (const actor of layers) if (inside(actor)) drawLayer(actor);
       this.drawing.drawGoalBack(c, true);
       this.drawing.drawGoalFront(c);
-      for (const actor of layers) if (actor.y >= FIELD.top) drawLayer(actor);
+      for (const actor of layers) if (!inside(actor)) drawLayer(actor);
       if (held && !above) this.drawing.drawBall(c, scene.ball);
     }
     ballAboveGoal() {
@@ -208,14 +210,17 @@
         c.transform(...projection.upright(0, rear));
         c.translate(0, -80);
       } else c.translate(0, STADIUM_OFFSET);
-      c.fillStyle = '#1e3324'; c.fillRect(70, 6, 860, 10);
-      c.fillStyle = '#27402f'; c.fillRect(70, 16, 860, 10);
-      c.fillStyle = '#304e39'; c.fillRect(70, 26, 860, 10);
-      c.fillStyle = '#395b43'; c.fillRect(70, 36, 860, 10);
-      c.fillStyle = '#b0bec5'; c.fillRect(70, 46, 860, 2); // Tribün parmaklığı
+      const standLeft = projection ? -150 : 70, standWidth = projection ? 1300 : 860;
+      c.fillStyle = '#1e3324'; c.fillRect(standLeft, 6, standWidth, 10);
+      c.fillStyle = '#27402f'; c.fillRect(standLeft, 16, standWidth, 10);
+      c.fillStyle = '#304e39'; c.fillRect(standLeft, 26, standWidth, 10);
+      c.fillStyle = '#395b43'; c.fillRect(standLeft, 36, standWidth, 10);
+      c.fillStyle = '#b0bec5'; c.fillRect(standLeft, 46, standWidth, 2); // Tribün parmaklığı
 
       const excited = this.scene.excited;
       for (const fan of this.scene.crowd) {
+        // The flat camera only shows the original stand width.
+        if (!projection && (fan.x < 80 || fan.x > 920)) continue;
         const hop = excited ? -Math.abs(Math.sin(this.scene.time * 14 + fan.phase)) * 6 : Math.sin(this.scene.time * 2.5 + fan.phase) * 1.2;
         // Saç & Kafa
         c.fillStyle = fan.hair; c.fillRect(fan.x - 2, fan.y - 6 + hop, 5, 3);
@@ -260,7 +265,7 @@
     drawPitch(c, projection) {
       const env = this.scene.environment;
       if (projection) {
-        c.save(); c.transform(...projection.ground); env.drawRunoff(c); c.restore();
+        c.save(); c.transform(...projection.ground); env.drawRunoff(c, true); c.restore();
         if (env.pitch === 'stadium') this.drawStadium(c, projection);
         else env.drawSurroundings(c, BACKDROP_SHIFT, projection);
         c.save(); c.transform(...projection.ground);
@@ -274,12 +279,16 @@
 
       // --- Saha Çizgileri (Parlak Tebeşir) ---
       c.strokeStyle = env.palette.line; c.lineWidth = 2.5; c.strokeRect(76, 84, 848, 600);
-      c.strokeRect(280, 84, 440, 180); // Ceza sahası
-      c.strokeRect(386, 84, 228, 68);  // Altıpas
-      c.beginPath(); c.arc(500, 210, 88, .65, Math.PI - .65); c.stroke(); // Ceza yayı
-      c.beginPath(); c.arc(500, 210, 3.5, 0, Math.PI * 2); c.fillStyle = env.palette.line; c.fill(); // Penaltı noktası
+      // Markings are visual only (about 13% larger), centred on the goal axis at x = 500.
+      c.strokeRect(252, 84, 496, 204); // Ceza sahası
+      c.strokeRect(370, 84, 260, 80);  // Altıpas
+      c.beginPath(); c.arc(500, 227, 99, .65, Math.PI - .65); c.stroke(); // Ceza yayı
+      c.beginPath(); c.arc(500, 227, 3.5, 0, Math.PI * 2); c.fillStyle = env.palette.line; c.fill(); // Penaltı noktası
       c.beginPath(); c.moveTo(76, 619); c.lineTo(924, 619); c.stroke(); // Orta saha çizgisi
-      c.beginPath(); c.arc(500, 619, 95, 0, Math.PI * 2); c.stroke(); // Orta saha dairesi
+      // The larger centre circle is kept inside the touchlines.
+      c.save(); c.beginPath(); c.rect(76, 84, 848, 600); c.clip();
+      c.beginPath(); c.arc(500, 619, 108, 0, Math.PI * 2); c.stroke(); // Orta saha dairesi
+      c.restore();
       c.beginPath(); c.arc(500, 619, 3.5, 0, Math.PI * 2); c.fill();
       for (const x of [76, 924]) { c.beginPath(); c.arc(x, 84, 15, x === 76 ? 0 : Math.PI / 2, x === 76 ? Math.PI / 2 : Math.PI); c.stroke(); }
 
@@ -434,12 +443,12 @@
 
       c.save();
       const projection = this.scene.view.projection, scale = this.scene.geometry.playerScale(p);
-      // Limit the visual trial to the original outfield player, even after a pass.
-      const threeQuarter = !!projection && p === this.scene.player && p.team !== 'keeper';
+      // Every actor shares the block style; the flat fallback only draws without a projection.
+      const threeQuarter = !!projection, front = pose.facing === 'toward';
       if (projection) {
         c.save(); c.transform(...projection.ground);
         c.fillStyle = 'rgba(10,32,18,0.45)';
-        c.beginPath(); c.ellipse(p.x, p.y + 10 * scale, 11 * scale, (threeQuarter ? 8 : 5) * scale, 0, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse(p.x, p.y + 10 * scale, 11 * scale, 8 * scale, 0, 0, Math.PI * 2); c.fill();
         c.restore();
         // Explicit keeper hands use the same vertical plane as glove contact.
         const footOffset = pose.keeperHands ? 0 : 10 * scale;
@@ -477,17 +486,23 @@
         // Depth edges use the pitch basis expressed in this upright local frame.
         const depthX = projection.ground[2] / projection.ground[0];
         const depthY = projection.ground[3] - projection.ground[1] * depthX;
+        // Leaning and diving rotate the frame; keep the depth vector aligned with the pitch.
+        const turn = (pose.tackling || pose.stumbling ? pose.lean || 0 : 0) + (pose.diving ? pose.diveLean || 0 : 0);
+        const cosTurn = Math.cos(turn), sinTurn = Math.sin(turn);
+        const unitX = depthX * cosTurn + depthY * sinTurn, unitY = -depthX * sinTurn + depthY * cosTurn;
+        const top = p.team === 'red' ? '#ef6a67' : p.team === 'keeper' ? '#d9ff4d' : '#53a6eb';
         const face = (points, color) => {
           c.fillStyle = color; c.beginPath();
           points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
           c.closePath(); c.fill();
         };
-        const block = (x, y, width, height, depth, main, side, top) => {
-          const dx = -depth * depthX, dy = -depth * depthY;
-          face([[x, y], [x + dx, y + dy], [x + width + dx, y + dy], [x + width, y]], top);
+        const block = (x, y, width, height, depth, main, side, topColor) => {
+          const dx = -depth * unitX, dy = -depth * unitY;
+          face([[x, y], [x + dx, y + dy], [x + width + dx, y + dy], [x + width, y]], topColor);
           face([[x + width, y], [x + width + dx, y + dy], [x + width + dx, y + height + dy], [x + width, y + height]], side);
           c.fillStyle = main; c.fillRect(x, y, width, height);
         };
+        const glove = (x, y, size = 5) => block(x, y, size, size, 3, '#ffffff', '#c9d3d8', '#ffffff');
         const left = isShooting ? -stride * 1.5 : stride;
         const right = tackling ? 12 : isShooting ? 6 : -stride;
         for (const [x, step] of [[2, right], [-6, left]]) {
@@ -495,22 +510,61 @@
           block(x, 8 + step, 4, 3, 6, '#151d22', '#38434b', '#4b5860');
           c.fillStyle = '#e3e9df'; c.fillRect(x, 10 + step, 4, 1);
         }
-        // The far arm sits behind the torso; existing stride and celebration drive both arms.
-        const armFar = celebration ? -22 : -14 + (moving ? stride * .8 : 0);
-        const armNear = celebration ? -22 : -14 - (moving ? stride * .8 : 0);
-        block(6, armFar, 3, 8, 3, shirtDark, shirtDark, shirtMain);
-        block(6, celebration ? -25 : armFar + 8, 3, 3, 2, '#d58b5b', '#bf764e', skinColor);
+        const keeper = p.team === 'keeper', handColor = keeper ? '#ffffff' : skinColor;
+        if (celebration) {
+          block(6, -22, 3, 9, 3, shirtDark, shirtDark, shirtMain);
+          block(6, -25, 3, 3, 2, handColor, '#bf764e', handColor);
+        } else if (pose.keeperHands) {
+          // Explicit gloves are drawn over the torso below.
+        } else if (pose.diving) {
+          block(8, -18, 4, 10, 3, shirtMain, shirtDark, top); glove(8, -22);
+        } else if (pose.holdingBall) {
+          block(4, -13, 7, 5, 3, shirtMain, shirtDark, top);
+        } else if (keeper) {
+          // The ready stance keeps the same wide arms and gloves as the flat sprite.
+          block(8, -14, 6, 4, 3, shirtMain, shirtDark, top); block(13, -18, 4, 7, 3, shirtMain, shirtDark, top); glove(13, -22);
+        } else {
+          // The far arm sits behind the torso; existing stride and celebration drive both arms.
+          const armFar = -14 + (moving ? stride * .8 : 0);
+          block(6, armFar, 3, 8, 3, shirtDark, shirtDark, shirtMain);
+          block(6, armFar + 8, 3, 3, 2, '#d58b5b', '#bf764e', handColor);
+        }
         block(-7, -4, 13, 7, 5, shortColor, '#b1bdc4', '#f2f5ee');
         c.fillStyle = 'rgba(0,0,0,.22)'; c.fillRect(-1, 0, 2, 3);
-        block(-8, -15, 14, 12, 6, shirtMain, shirtDark, '#53a6eb');
+        block(-8, -15, 14, 12, 6, shirtMain, shirtDark, top);
         c.fillStyle = '#e8f1eb'; c.fillRect(-3, -15, 5, 1.5);
+        c.fillStyle = keeper ? '#212121' : '#ffffff';
         c.font = 'bold 7px monospace'; c.textAlign = 'center'; c.fillText(String(p.number), -1, -7);
-        block(-10, armNear, 3, 8, 3, shirtMain, shirtDark, '#53a6eb');
-        block(-10, celebration ? -25 : armNear + 8, 3, 3, 2, skinColor, '#d58b5b', '#ffd09a');
+        if (celebration) {
+          block(-10, -22, 3, 9, 3, shirtMain, shirtDark, top);
+          block(-10, -25, 3, 3, 2, handColor, '#d58b5b', handColor);
+        } else if (pose.keeperHands) {
+          for (const hand of pose.keeperHands) {
+            c.strokeStyle = shirtMain; c.lineWidth = 4; c.beginPath(); c.moveTo(0, -12); c.lineTo(hand.x, hand.y); c.stroke();
+            glove(hand.x - 2.5, hand.y - 2.5);
+          }
+        } else if (pose.diving) {
+          block(-12, -18, 4, 10, 3, shirtMain, shirtDark, top); glove(-13, -22);
+        } else if (pose.holdingBall) {
+          block(-11, -13, 7, 5, 3, shirtMain, shirtDark, top); glove(-6, -12); glove(1, -12);
+        } else if (keeper) {
+          block(-14, -14, 6, 4, 3, shirtMain, shirtDark, top); block(-17, -18, 4, 7, 3, shirtMain, shirtDark, top); glove(-18, -22);
+        } else {
+          const armNear = -14 - (moving ? stride * .8 : 0);
+          block(-10, armNear, 3, 8, 3, shirtMain, shirtDark, top);
+          block(-10, armNear + 8, 3, 3, 2, handColor, '#d58b5b', '#ffd09a');
+        }
         block(-5, -23, 9, 8, 5, skinColor, '#d58b5b', '#ffd09a');
-        // Back three-quarter head: visible crown and one ear, facing upfield.
-        block(-5.5, -26, 10, 5, 5, hairColor, '#b28a35', '#ffe078');
-        c.fillStyle = skinColor; c.fillRect(3, -21, 2, 3);
+        if (front) {
+          // Facing the camera: eyes and a hair line on the visible face.
+          c.fillStyle = '#212121'; c.fillRect(-3, -20, 2, 2); c.fillRect(1, -20, 2, 2);
+          block(-6, -26, 11, 4, 5, hairColor, '#b28a35', '#ffe078');
+          c.fillStyle = hairColor; c.fillRect(-6, -23, 2, 3); c.fillRect(3, -23, 2, 3);
+        } else {
+          // Back three-quarter head: visible crown and one ear, facing upfield.
+          block(-5.5, -26, 10, 5, 5, hairColor, '#b28a35', '#ffe078');
+          c.fillStyle = skinColor; c.fillRect(3, -21, 2, 3);
+        }
       } else {
         // 2. Bacaklar & Kramponlar (16-bit Pixel Art)
         const legL_stride = isShooting ? -stride * 1.5 : stride;
@@ -862,7 +916,12 @@
       const b = this.ballRenderPoint(this.scene.ball), pulse = 1 + Math.sin(this.scene.time * 4) * .09;
       c.save(); c.strokeStyle = '#ffeb3b88'; c.lineWidth = 2; c.beginPath(); c.arc(b.x, b.y, 35 * pulse, 0, Math.PI * 2); c.stroke();
       if (this.scene.presentation().drawToShoot) { c.restore(); return; }
-      c.strokeStyle = '#ffeb3b'; c.lineWidth = 2; c.beginPath(); c.moveTo(b.x, b.y + 69); c.lineTo(b.x, b.y + 86); c.lineTo(b.x - 4, b.y + 82); c.moveTo(b.x, b.y + 86); c.lineTo(b.x + 4, b.y + 82); c.stroke(); c.restore();
+      // The pull-back arrow follows the screen direction of world +y.
+      const ground = this.scene.view.projection?.ground, back = ground ? Math.hypot(ground[2], ground[3]) : 1;
+      const ux = ground ? ground[2] / back : 0, uy = ground ? ground[3] / back : 1, point = distance => ({ x: b.x + ux * distance, y: b.y + uy * distance });
+      const start = point(69), tip = point(86), left = point(82), wing = { x: -uy * 4, y: ux * 4 };
+      c.strokeStyle = '#ffeb3b'; c.lineWidth = 2; c.beginPath(); c.moveTo(start.x, start.y); c.lineTo(tip.x, tip.y);
+      c.lineTo(left.x + wing.x, left.y + wing.y); c.moveTo(tip.x, tip.y); c.lineTo(left.x - wing.x, left.y - wing.y); c.stroke(); c.restore();
     }
     drawContact(c) {
       // İkonik New Star Soccer Telstar Ball Contact Ekranı

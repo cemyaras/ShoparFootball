@@ -264,3 +264,7 @@ In this managed environment, Chromium policy blocks direct `file://` navigation;
 The live game uses the 20° projection on desktop and mobile. The camera stays fixed during aim, contact and captured gestures. During a flight it follows the ball together with the goal, receiver or interception area, and zooms out only if those points need more room. Reduced motion uses the initial framing and keeps the net still.
 
 Verify that a corner goal and a conceded penalty both settle inside the same goal volume. The first net contact should move only the struck panel for up to 0.45 seconds. A shot over the bar or outside the posts should leave the net still. Check that the passing and reception labels remain upright over their projected positions. Use the existing Draw the Shot, Precision Pass and penalty browser flows for native pointer checks.
+
+## Phase 14 camera V2
+
+Check on a portrait phone, short landscape and desktop that players are about the Phase 13 size and the ball and the goal mouth stay visible in every highlight. Verify that goals settle inside the deeper net (a ball near a post may touch the side panel first), post and bar hits stay unchanged, and keepers still save as before. Teammates, opponents and keepers should use the block sprite style, with opponents and keepers facing the camera and gloves attached to the keeper's dive. Use the draw-shot, precision-pass and penalty browser flows for native pointer checks; touches within 44 CSS pixels of the drawn ball must start a drag.
