@@ -4,7 +4,15 @@
   const { State, FIELD, clamp } = window.ShoparFootball.Core;
   const { HighlightController } = window.ShoparFootball.Controllers;
   const PASS = Object.freeze({ chargeTime: 1.2, minSpeed: 90, maxSpeed: 540, receiveSpeed: 300,
-    runSpeed: 76, chaseSpeed: 140, defenderSpeed: 90, reactionTime: .18, chaseRadius: 72, maxFlight: 4.5 });
+    runSpeed: 76, chaseSpeed: 140, defenderSpeed: 90, reactionTime: .25, chaseRadius: 72, maxFlight: 4.5 });
+  // Each layout lists the passer, two receivers and two defenders.
+  const LAYOUTS = [
+    null, // Start with the catalog layout.
+    [[650, 560], [365, 438], [550, 286], [505, 385], [425, 310]],
+    [[500, 575], [280, 480], [712, 365], [465, 422], [600, 457]],
+    [[718, 485], [445, 500], [590, 275], [566, 385], [703, 346]],
+    [[285, 465], [535, 555], [510, 295], [398, 352], [605, 429]]
+  ];
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   function contactTime(ballBefore, ballAfter, footBefore, footAfter, radius) {
     const rx = ballBefore.x - footBefore.x, ry = ballBefore.y - footBefore.y;
@@ -22,65 +30,101 @@
       super(context);
       this.phase = 'aiming'; this.elapsed = 0; this.holdTime = 0; this.power = 0;
       this.holding = false; this.target = null; this.finger = null; this.owner = null;
-      this.flightTime = 0; this.travel = 0; this.passDistance = 0; this.resultKind = null;
+      this.flightTime = 0; this.travel = 0; this.passDistance = 0;
+      this.receiver = null; this.interceptor = null;
     }
     enter() {
       this.context.play.kicker = null; this.context.feedback.power(0);
       return { state: State.DEFENDING, toast: 'Choose a teammate or lead their run. Hold for power, release to pass.', duration: 2.6 };
     }
-    selectTarget(point, pointerType) {
-      this.target = { x: clamp(point.x, FIELD.left + 12, FIELD.right - 12), y: clamp(point.y, FIELD.top + 20, FIELD.bottom - 12) };
-      this.finger = pointerType === 'touch' ? { ...point } : null;
+    nearestMate(point, radius = Infinity) {
+      let nearest = null;
+      for (const mate of this.context.mates) {
+        const foot = this.context.geometry.possessionPosition(mate);
+        const gap = Math.min(distance(mate, point), distance(foot, point));
+        if (gap <= radius) {
+          radius = gap;
+          nearest = mate;
+        }
+      }
+      return nearest;
     }
     handleInput(input) {
       if (this.phase !== 'aiming') return { handled: false };
       if (input.type === 'down') {
-        if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y)) return { handled: false };
-        this.holding = true; this.holdTime = 0; this.power = 0; this.pointerType = input.pointerType;
-        this.selectTarget(input.point, input.pointerType);
+        const { x, y } = input.point;
+        if (!Number.isFinite(x) || !Number.isFinite(y) ||
+          x < FIELD.left || x > FIELD.right || y < FIELD.top || y > FIELD.bottom) return { handled: false };
+        this.holding = true; this.holdTime = 0; this.power = 0;
+        this.target = { x, y };
+        this.finger = input.pointerType === 'touch' ? this.target : null;
+        this.receiver = this.nearestMate(this.target, 32);
+        this.passType = this.receiver ? 'normal' : 'through';
         return { handled: true, capture: true, updateOnRelease: false };
       }
-      if (!this.holding) return { handled: false };
-      if (input.type === 'move') {
-        if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y)) this.cancelInput();
-        else this.selectTarget(input.point, this.pointerType);
-      } else if (input.type === 'up') {
-        this.holding = false;
-        const c = this.context, span = distance(c.ball, this.target);
-        if (span < 24) { this.cancelInput(); c.feedback.toast('Choose a target farther from the ball.', 1.5); return { handled: true }; }
-        const speed = PASS.minSpeed + (PASS.maxSpeed - PASS.minSpeed) * this.power;
-        this.phase = 'flight'; this.passDistance = span; this.releasedPower = this.power;
-        Object.assign(c.ball, { vx: (this.target.x - c.ball.x) / span * speed, vy: (this.target.y - c.ball.y) / span * speed,
-          z: 0, vz: 0, spin: 0, age: 0 });
-        c.play.kicker = c.player; c.play.motionTime = 0; c.effects.trail = []; c.audio.play('kick');
+      if (!this.holding || input.type !== 'up') return { handled: false };
+      this.holding = false;
+      const c = this.context, span = distance(c.ball, this.target);
+      if (span < 24) {
+        this.cancelInput();
+        c.feedback.toast('Choose a target farther from the ball.', 1.5);
+        return { handled: true };
       }
+      if (this.passType === 'through') this.receiver = this.nearestMate(this.target);
+      const speed = PASS.minSpeed + (PASS.maxSpeed - PASS.minSpeed) * this.power;
+      this.phase = 'flight'; this.passDistance = span; this.releasedPower = this.power;
+      Object.assign(c.ball, { vx: (this.target.x - c.ball.x) / span * speed, vy: (this.target.y - c.ball.y) / span * speed,
+        z: 0, vz: 0, spin: 0, age: 0 });
+      c.play.kicker = c.player; c.play.motionTime = 0; c.effects.trail = []; c.audio.play('kick');
       return { handled: true };
     }
     cancelInput() {
       if (this.phase !== 'aiming') return;
       this.holding = false; this.target = null; this.finger = null; this.holdTime = 0; this.power = 0;
+      this.receiver = null;
+    }
+    interceptionPoint(foot) {
+      const ball = this.context.ball;
+      const speed = Math.hypot(ball.vx, ball.vy);
+      if (!speed) return null;
+      const along = ((foot.x - ball.x) * ball.vx + (foot.y - ball.y) * ball.vy) / speed;
+      if (along < 0) return null;
+      const time = clamp(along / speed + .15, .15, .6);
+      const point = { x: ball.x + ball.vx * time, y: ball.y + ball.vy * time };
+      return distance(foot, point) <= PASS.defenderSpeed * time + 18 ? point : null;
     }
     moveActors(dt) {
       const c = this.context;
       c.mates.forEach((actor, i) => {
         const foot = c.geometry.possessionPosition(actor);
-        if (this.phase === 'flight' && distance(foot, c.ball) < PASS.chaseRadius) {
-          c.physics.movePlayer(actor, actor.x + c.ball.x - foot.x, actor.y + c.ball.y - foot.y, PASS.chaseSpeed, dt);
-        } else c.physics.movePlayer(actor, actor.startX + 40 * Math.sin(this.elapsed * .65 + i),
+        if (this.phase === 'flight' && actor === this.receiver) {
+          const destination = this.passType === 'through' ? this.target : c.ball;
+          if (this.passType === 'through' || distance(foot, c.ball) < PASS.chaseRadius) {
+            c.physics.movePlayer(actor, actor.x + destination.x - foot.x, actor.y + destination.y - foot.y, PASS.chaseSpeed, dt);
+            return;
+          }
+        }
+        c.physics.movePlayer(actor, actor.startX + 40 * Math.sin(this.elapsed * .65 + i),
           actor.startY - 28 * Math.sin(this.elapsed * .8 + i), PASS.runSpeed, dt);
       });
       c.defenders.forEach((actor, i) => {
-        if (this.phase === 'flight' && this.flightTime > PASS.reactionTime && distance(actor, c.ball) < 220) {
+        if (this.phase === 'flight' && this.flightTime >= PASS.reactionTime && (!this.interceptor || this.interceptor === actor)) {
           const foot = c.geometry.possessionPosition(actor);
-          c.physics.movePlayer(actor, actor.x + c.ball.x + c.ball.vx * .16 - foot.x,
-            actor.y + c.ball.y + c.ball.vy * .16 - foot.y, PASS.defenderSpeed, dt);
-        } else c.physics.movePlayer(actor, actor.startX + 34 * Math.sin(this.elapsed * .9 + i * 2),
+          const point = this.interceptionPoint(foot);
+          if (point) { this.interceptor = actor; this.interceptTarget = point; }
+          if (this.interceptor === actor) {
+            c.physics.movePlayer(actor, actor.x + this.interceptTarget.x - foot.x,
+              actor.y + this.interceptTarget.y - foot.y, PASS.defenderSpeed, dt);
+            return;
+          }
+        }
+        c.physics.movePlayer(actor, actor.startX + 34 * Math.sin(this.elapsed * .9 + i * 2),
           actor.startY + 22 * Math.sin(this.elapsed * .7 + i), PASS.defenderSpeed, dt);
       });
     }
     resolve(kind, owner = null) {
       if (this.phase === 'resolved') return;
-      this.phase = 'resolved'; this.resultKind = kind; this.owner = owner;
+      this.phase = 'resolved'; this.owner = owner;
       if (owner) {
         this.context.ball.vx *= .12; this.context.ball.vy *= .12;
         if (kind === 'pass_complete') owner.celebration = 1;
@@ -121,14 +165,12 @@
     }
     updateResult(dt, resolution) {
       const c = this.context; resolution.elapsed += dt; c.play.motionTime += dt;
+      c.physics.integrateBall(c.ball, dt);
       if (this.owner) {
         const actor = this.owner;
-        c.physics.movePlayer(actor, clamp(actor.x + (this.resultKind === 'pass_complete' ? 35 : -25), FIELD.left + 30, FIELD.right - 30),
-          clamp(actor.y - 25, FIELD.top + 30, FIELD.bottom - 30), 42, dt);
-        const foot = c.geometry.possessionPosition(actor), blend = 1 - Math.exp(-dt * 16);
-        c.ball.x += (foot.x - c.ball.x) * blend; c.ball.y += (foot.y - c.ball.y) * blend;
-        c.ball.vx = c.ball.vy = 0;
-      } else c.physics.integrateBall(c.ball, dt);
+        const foot = c.geometry.possessionPosition(actor);
+        c.physics.movePlayer(actor, actor.x + c.ball.x - foot.x, actor.y + c.ball.y - foot.y, 60, dt);
+      }
       c.effects.trail.forEach(p => p.age += dt);
     }
     getActorPose(actor) {
@@ -138,11 +180,11 @@
     }
     getPresentation() {
       return { hint: this.phase === 'aiming' ? 'Touch a teammate or open space. Hold for power, release to pass. Lead the run.' : this.phase === 'flight' ? 'Watch the runners and passing lanes.' : '',
-        ariaLabel: 'Precision Pass. Touch or click a teammate or open space. Hold to increase pass power, drag to adjust the target, release to pass. Lead moving teammates. Defenders can intercept.',
+        ariaLabel: 'Precision Pass. Touch or click a teammate or open space. Hold to increase pass power, then release to pass to the selected spot. Defenders can intercept.',
         camera: { bounds: { left: 180, top: 180, width: 650, height: 510 }, maxScale: 1.4 },
         help: { steps: [{ title: '1. Choose a target', detail: 'Teammate or space ahead' }, { title: '2. Hold for power', detail: 'Longer passes need more power' }, { title: '3. Release to pass', detail: 'Time the moving receiver' }],
           guide: 'One gesture · Normal and through passes · No automatic reception',
-          detail: 'Touch or click a teammate to aim at that location, or lead a runner into open space. Hold to charge from 0% to 100% in 1.2 seconds; drag to adjust your target and release to pass. Players keep moving while you aim. Short power can leave the ball short, and too much pace can run past the receiver. Teammates must physically reach a controllable ball. Defenders react and can intercept.' } };
+          detail: 'Press on a teammate for a normal pass or pick open space for a through pass. Hold to charge from 0% to 100% in 1.2 seconds and release to pass to that spot. For a through pass, the nearest teammate runs into the selected space. A receiver must physically reach the ball, and a defender can step into a reachable passing lane. Short or overhit passes can miss.' } };
     }
     drawWorld(canvas) {
       const c = this.context, unit = 1 / c.view.scale;
@@ -172,11 +214,24 @@
       canvas.fillStyle = '#10261bf2'; canvas.fillRect(x - 72, y, 144, 34);
       canvas.strokeStyle = '#bad29888'; canvas.strokeRect(x - 72, y, 144, 34);
       canvas.font = 'bold 11px Arial'; canvas.textAlign = 'center'; canvas.textBaseline = 'top'; canvas.fillStyle = '#e5ffc0';
-      canvas.fillText(`TARGET · POWER ${Math.round(this.power * 100)}%`, x, y + 5);
+      canvas.fillText(`${this.passType === 'normal' ? 'NORMAL' : 'THROUGH'} · ${Math.round(this.power * 100)}%`, x, y + 5);
       canvas.fillStyle = '#40554a'; canvas.fillRect(x - 64, y + 23, 128, 5);
       canvas.fillStyle = '#d0f58d'; canvas.fillRect(x - 64, y + 23, 128 * this.power, 5); canvas.restore();
     }
   }
-  PrecisionPassController.create = context => new PrecisionPassController(context);
+  PrecisionPassController.create = context => {
+    const index = context.memory.passLayout ?? 0;
+    const layout = LAYOUTS[index];
+    context.memory.passLayout = (index + 1) % LAYOUTS.length;
+    if (layout) {
+      const actors = [context.player, ...context.mates, ...context.defenders];
+      actors.forEach((actor, i) => {
+        const [x, y] = layout[i];
+        Object.assign(actor, { x, y, startX: x, startY: y, tx: x, ty: y });
+      });
+      Object.assign(context.ball, context.geometry.possessionPosition(context.player));
+    }
+    return new PrecisionPassController(context);
+  };
   window.ShoparFootball.PrecisionPassController = PrecisionPassController;
 })();

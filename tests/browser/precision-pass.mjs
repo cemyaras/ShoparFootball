@@ -11,7 +11,7 @@ const check=(pass,label,details)=>checks.push({pass:Boolean(pass),label,...(pass
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function read(page){return page.evaluate(()=>{
   const g=footballGame,c=g.controller,r=g.canvas.getBoundingClientRect();
-  return JSON.parse(JSON.stringify({state:g.state,phase:c.phase,power:c.power,holding:c.holding,target:c.target,finger:c.finger,
+  return JSON.parse(JSON.stringify({state:g.state,phase:c.phase,passType:c.passType,power:c.power,holding:c.holding,target:c.target,finger:c.finger,
     ball:g.ball,mates:g.mates,defenders:g.defenders,elapsed:c.elapsed,pointer:g.pointer,captured:g.pointer&&g.canvas.hasPointerCapture(g.pointer.id),
     view:g.view,rect:{left:r.left,top:r.top}}));
 });}
@@ -56,10 +56,11 @@ try{
     await tap('#select-highlight-button');await page.locator('[data-highlight="11"]').evaluate(e=>e.scrollIntoView({block:'nearest'}));await tap('[data-highlight="11"]');await page.clock.runFor(1000);
     check(await page.evaluate(()=>footballGame.index===11&&footballGame.state==='DEFENDING'&&footballGame.controller.phase==='aiming'),`${name}: native picker opens Precision Pass`);
     for(const [kind,target,hold,expected]of[['normal',{x:650,y:450},600,'pass_complete'],['through',{x:700,y:410},600,'pass_complete'],
-      ['short',{x:650,y:450},32,'pass_short'],['overhit',{x:650,y:450},1200,'pass_missed'],['interception',{x:650,y:450},300,'pass_intercepted']]){
+      ['short',{x:650,y:450},32,'pass_short'],['overhit',{x:650,y:450},1200,'pass_missed'],['interception',{x:730,y:380},600,'pass_intercepted']]){
       const start=await setup(page),point=screen(start,target);
       await pointer('down',point);await page.clock.runFor(hold);const aim=await read(page);
       check(aim.captured&&aim.holding&&aim.phase==='aiming',`${name}/${kind}: target captured`);
+      check(aim.passType===(target.x===650?'normal':'through'),`${name}/${kind}: pass type follows the selected spot`);
       check(Math.abs(aim.power-Math.min(hold/1200,1))<.02,`${name}/${kind}: time-based pass power`,aim.power);
       check(Math.abs(aim.target.x-target.x)*aim.view.scale<1.1&&Math.abs(aim.target.y-target.y)*aim.view.scale<1.1,`${name}/${kind}: selected target has no hidden coordinate shift`);
       if(hold>=300)check([...aim.mates,...aim.defenders].every((a,i)=>Math.hypot(a.x-[...start.mates,...start.defenders][i].x,a.y-[...start.mates,...start.defenders][i].y)>3),`${name}/${kind}: teammates and defenders move while holding`);
@@ -77,10 +78,17 @@ try{
       if(result.contact)check(Math.hypot(result.contact.ball.x-result.contact.foot.x,result.contact.ball.y-result.contact.foot.y)<19,`${name}/${kind}: reception/interception follows physical contact`,result.contact);
       check((await page.locator('#next-button').textContent()).includes('RETRY'),`${name}/${kind}: practice result retries`);
     }
-    await tap('#next-button');await page.clock.runFor(1000);check((await read(page)).phase==='aiming',`${name}: native retry resets the pass`);
+    const previousLayout = (await read(page)).mates.map(mate => mate.startX);
+    await tap('#next-button');
+    await page.clock.runFor(1000);
+    const retry = await read(page);
+    check(retry.phase === 'aiming', `${name}: native retry resets the pass`);
+    check(retry.mates.some((mate, index) => mate.startX !== previousLayout[index]), `${name}: native retry advances the layout`);
     const start=await setup(page);await pointer('down',screen(start,{x:700,y:410}));await page.clock.runFor(400);
+    const selected=(await read(page)).target;
     await pointer('move',screen(start,{x:730,y:380}));const before=(await read(page)).power;await page.clock.runFor(200);
-    check((await read(page)).power>before,`${name}: dragging adjusts aim while power keeps charging`);
+    const held=await read(page);
+    check(held.power>before&&held.target.x===selected.x&&held.target.y===selected.y,`${name}: movement keeps the selected target and power keeps charging`);
     await pointer('cancel');const cancelled=await read(page);check(!cancelled.pointer&&!cancelled.holding&&!cancelled.target&&cancelled.phase==='aiming',`${name}: pointer cancellation never passes`);
     await tap('#help-button');check((await page.locator('#help-detail').textContent()).includes('physically reach'),`${name}: help explains physical reception`);await page.keyboard.press('Escape');
     await page.evaluate(()=>{precisionEvents.length=0;});

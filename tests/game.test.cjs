@@ -1369,12 +1369,12 @@ test('Draw the Shot stays outside Play All and match schedules', () => {
 });
 
 test('Precision Pass is practice-only and completes physical passes, interceptions and misses through normal results', () => {
-  for(const [hold,kind,stat] of [[0,'pass_short','misses'],[.3,'pass_intercepted','misses'],[.6,'pass_complete','passes'],[1.2,'pass_missed','misses']]) {
+  for(const [hold,kind,stat,target] of [[0,'pass_short','misses'],[.6,'pass_intercepted','misses',{x:730,y:380}],[.6,'pass_complete','passes'],[1.2,'pass_missed','misses']]) {
     const {game:g,elements}=fixture();g.startPractice(11);g.update(.9);
     assert.equal(g.state,'DEFENDING');assert.equal(g.defense,null);assert.equal(g.practiceIndex,11);
     assert.equal(elements.get('chapter-number').textContent,'12/12');
     const event=p=>({...defensePointer(g,p),pointerType:'touch'});
-    g.onPointerDown(event({x:650,y:450}));g.update(hold);
+    g.onPointerDown(event(target || {x:650,y:450}));g.update(hold);
     const power=g.controller.power;g.onPointerUp(event({x:900,y:600}));
     assert.equal(g.pointer,null);assert.equal(g.controller.phase,'flight');assert.equal(g.controller.releasedPower,power);
     until(g,()=>g.state==='RESULT');assert.equal(g.resolution.kind,kind);assert.equal(g.stats[stat],1);
@@ -1397,6 +1397,29 @@ test('Precision Pass cancellation and dialogs leave the pass unlaunched and paus
   assert.equal(g.pointer,null);assert.equal(g.controller.phase,'aiming');assert.equal(g.controller.target,null);
   elements.get('help-dialog').close();g.update(.1);assert.notEqual(g.controller.elapsed,JSON.parse(before)[3]);
   g.onPointerDown(event);g.update(.6);g.onPointerUp(event);assert.equal(g.controller.phase,'flight');
+});
+
+test('Precision Pass retries cycle through five playable layouts and return to the first', () => {
+  const { game: g } = fixture();
+  const layout = () => [g.player, ...g.mates, ...g.defenders].map(actor => [actor.startX, actor.startY]);
+  const layouts = [];
+  g.startPractice(11);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    g.update(.9);
+    layouts.push(JSON.stringify(layout()));
+    const foot = g.possessionPosition(g.player);
+    assert.equal(g.ball.x, foot.x);
+    assert.equal(g.ball.y, foot.y);
+    const target = defensePointer(g, g.mates[0]);
+    g.onPointerDown(target);
+    g.update(.3);
+    g.onPointerUp(target);
+    until(g, () => g.state === 'RESULT');
+    assert.equal(g.resolution.kind, 'pass_complete', `layout ${attempt + 1}`);
+    g.nextHighlight();
+  }
+  assert.equal(new Set(layouts).size, 5);
+  assert.equal(JSON.stringify(layout()), layouts[0]);
 });
 
 test('Draw the Shot can follow a drawn detour around a defender blocking the direct shot', () => {

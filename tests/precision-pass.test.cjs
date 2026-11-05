@@ -39,7 +39,12 @@ test('Precision Pass charges progressively while all runners keep moving, and ca
 test('mouse and touch release the same visible target and power into identical shared physics',()=>{
   const a=fixture({mates:[],defenders:[]}),b=fixture({mates:[],defenders:[]});
   for(const [f,type]of[[a,'mouse'],[b,'touch']]) {
-    pass(f.controller,{x:650,y:450},.6,type);
+    const c = f.controller;
+    assert.equal(c.handleInput({type:'down',point:{x:650,y:450},pointerType:type}).capture,true);
+    c.update(.3);
+    c.handleInput({type:'move',point:{x:660,y:460},pointerType:type});
+    c.update(.3);
+    c.handleInput({type:'up',point:{x:900,y:600},pointerType:type});
     assert.equal(f.controller.target.x,650);assert.equal(f.controller.target.y,450);close(f.controller.releasedPower,.5);
   }
   assert.equal(JSON.stringify(a.context.ball),JSON.stringify(b.context.ball));
@@ -53,10 +58,26 @@ test('mouse and touch release the same visible target and power into identical s
 test('normal and through passes require physical reception, and both use the same gesture',()=>{
   for(const target of [{x:650,y:450},{x:700,y:410}]) {
     const {controller:c,context:g,results}=fixture({defenders:[]});
-    pass(c,target,.6);finish(c);
+    pass(c,target,.6);
+    assert.equal(c.passType,target.x===650?'normal':'through');
+    assert.equal(c.receiver,g.mates[0]);
+    if(c.passType==='through') {
+      const foot = () => Core.possessionPosition(c.receiver);
+      const distanceToTarget = () => Math.hypot(foot().x-target.x,foot().y-target.y);
+      const before = distanceToTarget();
+      assert.ok(Math.hypot(g.ball.x-foot().x,g.ball.y-foot().y)>72);
+      c.update(.1);
+      assert.ok(distanceToTarget()<before-10,'the receiver runs into space before the ball comes near');
+      assert.equal(c.owner,null);
+    }
+    finish(c);
     assert.equal(results[0].kind,'pass_complete');assert.ok(g.mates.includes(c.owner));
     assert.ok(Math.min(...results[0].feet.map(p=>Math.hypot(results[0].ball.x-p.x,results[0].ball.y-p.y)))<=16.1);
     assert.ok(Math.hypot(c.owner.x-c.owner.startX,c.owner.y-c.owner.startY)>5);
+    const rollingBall = {...g.ball};
+    Physics.integrateBall(rollingBall,.1);
+    c.updateResult(.1,{elapsed:0});
+    close(g.ball.x,rollingBall.x);close(g.ball.y,rollingBall.y);
     c.update(1);assert.equal(results.length,1);
   }
 });
@@ -80,7 +101,7 @@ test('defenders react during flight and intercept through actual swept physical 
 
 test('the live default encounter rewards a normal pass or through pass and penalizes poor timing',()=>{
   for(const [target,wait,hold,expected]of[[{x:650,y:450},0,.6,'pass_complete'],[{x:700,y:410},0,.6,'pass_complete'],
-    [{x:700,y:410},0,.9,'pass_complete'],[{x:700,y:410},2,.9,'pass_missed'],[{x:650,y:450},0,.3,'pass_intercepted']]) {
+    [{x:700,y:410},0,.9,'pass_complete'],[{x:700,y:410},2,.9,'pass_missed'],[{x:730,y:380},0,.6,'pass_intercepted']]) {
     const {controller:c,results}=fixture();c.update(wait);pass(c,target,hold);finish(c);
     assert.equal(results[0].kind,expected,JSON.stringify({target,wait,hold}));
     close(c.releasedPower,hold/1.2);
