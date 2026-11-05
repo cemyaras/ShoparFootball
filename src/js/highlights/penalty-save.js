@@ -29,7 +29,9 @@
     getPresentation() {
       return { ballHeld: this.finished && this.context.resolution?.kind === this.savedKind, ballInNet: this.finished && this.context.resolution?.kind === this.concededKind, hideHelp: true, hint: this.finished ? '' : this.dive ? 'Watch the gloves' : 'Swipe to dive · stay for the middle',
         ariaLabel: (this.openPlay ? 'Save the Shot.' : 'Save the Penalty.') + ' Swipe anywhere toward the shot. Swipe upward diagonally for a high save. Stay still for a central shot.',
-        camera: this.openPlay ? { bounds: { left: 270, top: -35, width: 460, height: 490 }, maxScale: 1.7 } : { bounds: { left: 335, top: -35, width: 330, height: 370 }, maxScale: 2.1 } };
+        camera: { bounds: this.openPlay ? { left: 270, top: -35, width: 460, height: 490 }
+          : { left: 335, top: -35, width: 330, height: 370 }, maxScale: this.openPlay ? 1.7 : 2.1,
+          lock: this.phase !== 'flight', followBall: this.phase === 'flight', anchors: window.ShoparFootball.Core.goalCorners() } };
     }
     getActorPose(actor) {
       if (actor === this.context.player) return { hidden: true };
@@ -42,9 +44,12 @@
       if (this.finished || this.dive) return { handled: false };
       if (input.type === 'down') return { handled: true, capture: true, updateOnRelease: true };
       if (input.type === 'move' || input.type === 'up') {
-        const dx = input.point.x - input.start.x, dy = input.point.y - input.start.y;
-        if (Math.hypot(dx, dy) * this.context.view.scale >= 18) {
-          this.dive = { elapsed: 0, direction: Math.sign(dx) || 1, high: dy < -Math.abs(dx) * .45 };
+        const point = input.screenPoint || input.point, start = input.screenStart || input.start;
+        const dx = point.x - start.x, dy = point.y - start.y;
+        if (Math.hypot(dx, dy) * (input.screenPoint ? 1 : this.context.view.scale) >= 18) {
+          const axes = input.screenPoint && this.context.view.projection
+            ? this.context.view.projection.goalPlaneDelta({ x: dx, y: dy }) : { x: dx, y: dy };
+          this.dive = { elapsed: 0, direction: Math.sign(axes.x) || 1, high: axes.y < -Math.abs(axes.x) * .45 };
           this.context.audio.play('tap');
         }
       }
@@ -70,20 +75,23 @@
     }
     glovePoints() {
       const k = this.context.keeper, scale = GOAL.keeperScale, cos = Math.cos(this.angle), sin = Math.sin(this.angle);
-      return this.hands.map(hand => ({ x: k.x + (hand.x * cos - hand.y * sin) * scale,
-        y: k.y - this.height + (hand.x * sin + hand.y * cos) * scale }));
+      return this.hands.map(hand => ({
+        x: k.x + (hand.x * cos - hand.y * sin) * scale,
+        y: k.y,
+        z: (this.height - (hand.x * sin + hand.y * cos) * scale) / HEIGHT_PROJECTION
+      }));
     }
     touches(previous, oldGloves) {
       const b = this.context.ball;
       if (Math.min(previous.y, b.y) > 118 || Math.max(previous.y, b.y) < FIELD.top) return false;
       const gloves = this.glovePoints();
-      // Swept relative contact uses the same projected glove centres as drawing.
+      // Swept relative contact uses the same world glove centres that the renderer projects.
       for (let i = 0; i < gloves.length; i++) {
         const rx = previous.x - oldGloves[i].x;
-        const ry = previous.y - this.context.keeper.y;
-        const rz = previous.z * HEIGHT_PROJECTION - (this.context.keeper.y - oldGloves[i].y);
-        const dx = b.x - gloves[i].x - rx, dy = b.y - previous.y;
-        const dz = b.z * HEIGHT_PROJECTION - (this.context.keeper.y - gloves[i].y) - rz;
+        const ry = previous.y - oldGloves[i].y;
+        const rz = (previous.z - oldGloves[i].z) * HEIGHT_PROJECTION;
+        const dx = b.x - gloves[i].x - rx, dy = b.y - gloves[i].y - ry;
+        const dz = (b.z - gloves[i].z) * HEIGHT_PROJECTION - rz;
         const t = clamp(-(rx * dx + ry * dy + rz * dz) / (dx * dx + dy * dy + dz * dz || 1), 0, 1);
         if (Math.hypot(rx + dx * t, ry + dy * t, rz + dz * t) < 10) return true;
       }
@@ -129,14 +137,13 @@
       const b = this.context.ball;
       if (resolution.kind === this.savedKind) {
         const glove = this.glovePoints()[0], blend = 1 - Math.exp(-dt * 15);
-        b.x = lerp(b.x, glove.x, blend); b.y = lerp(b.y, this.context.keeper.y, blend);
-        b.z = lerp(b.z, (this.context.keeper.y - glove.y) / HEIGHT_PROJECTION, blend);
+        b.x = lerp(b.x, glove.x, blend); b.y = lerp(b.y, glove.y, blend);
+        b.z = lerp(b.z, glove.z, blend);
       } else {
+        const previous = { x: b.x, y: b.y, z: b.z };
         this.context.physics.integrateBall(b, dt * .4, .2);
-        const back = FIELD.top - GOAL.depth + 3;
-        if (b.y < back) { b.y = back; b.vy = Math.abs(b.vy) * .02; this.context.effects.netWobble = .8; }
-        b.x = clamp(b.x, FIELD.goalLeft + 7, FIELD.goalRight - 7);
-        if (b.y > FIELD.top - 3) { b.y = FIELD.top - 3; b.vy = -Math.abs(b.vy) * .2; }
+        const contact = this.context.physics.containGoalBall(b, previous, .02, 1);
+        this.context.effects.netImpact(resolution, contact, .8);
       }
     }
     drawWorld(c) {

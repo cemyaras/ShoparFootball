@@ -38,6 +38,13 @@
       const airScale = clamp(1 + Math.max(0, ball.z) * SPRITES.airGrowth, 1, SPRITES.maxAirScale);
       return { groundRadius, radius: groundRadius * airScale, height: ball.z * HEIGHT_PROJECTION };
     },
+    goalCorners() {
+      const plane = y => [
+        { x: FIELD.goalLeft, y, z: GOAL.height }, { x: FIELD.goalRight, y, z: GOAL.height },
+        { x: FIELD.goalLeft, y, z: 0 }, { x: FIELD.goalRight, y, z: 0 }
+      ];
+      return [...plane(FIELD.top), ...plane(FIELD.top - GOAL.depth)];
+    },
     goalGeometry() {
       const top = FIELD.top - FIELD.crossbar * HEIGHT_PROJECTION;
       return { left: FIELD.goalLeft, right: FIELD.goalRight, bottom: FIELD.top, top, backTop: top - GOAL.depth, backBottom: FIELD.top - GOAL.depth, inset: 8 };

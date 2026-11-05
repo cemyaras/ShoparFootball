@@ -9,13 +9,18 @@
     }
     getPresentation() {
       const c = this.context;
-      if (c.flow.state !== State.AIMING) return {};
+      const camera = this.cameraPresentation();
+      if (c.flow.state !== State.AIMING) return { camera };
       const through = c.runMarker === 'through';
       const receivers = [c.player, ...c.mates].filter(player => player !== c.play.controlled).map(player => {
         const x = through ? player.x - 22 : player.x, y = through ? player.y - 67 : player.y - 14;
         return { x, y, route: through ? { from: { x: player.x, y: player.y - 22 }, to: { x, y: y + 18 } } : null };
       });
-      return { runMarkers: { receivers } };
+      return { camera, runMarkers: { receivers } };
+    }
+    cameraPresentation() {
+      const followBall = this.context.flow.state === State.BALL_IN_MOTION;
+      return { lock: !followBall, followBall, anchors: followBall ? this.flightAnchors : null };
     }
     handleInput(input) {
       const c = this.context, play = c.play, p = input.point;
@@ -28,11 +33,20 @@
         if (c.flow.state === State.BALL_CONTACT && !play.contact) return { handled: true, capture: true, dismissToast: false };
       } else if (input.type === 'move' && c.flow.state === State.AIMING) {
         const dx = input.start.x - p.x, dy = input.start.y - p.y, d = length(dx, dy);
-        play.aim = { dx: d > 0 ? dx / d : 0, dy: d > 0 ? dy / d : -1, power: clamp(d / c.geometry.maxDrag(), 0, 1), distance: d }; c.feedback.power(play.aim.power);
+        const cssDistance = input.screenStart && input.screenPoint
+          ? distance(input.screenStart, input.screenPoint) : null;
+        const maxDrag = c.geometry.maxDrag();
+        play.aim = { dx: d > 0 ? dx / d : 0, dy: d > 0 ? dy / d : -1,
+          power: clamp(cssDistance === null ? d / maxDrag : cssDistance / (maxDrag * c.view.scale), 0, 1),
+          distance: d, screenDistance: cssDistance === null ? null : cssDistance / c.view.scale };
+        c.feedback.power(play.aim.power);
       } else if (input.type === 'up') {
         if (c.flow.state === State.AIMING) {
           const finalAim = play.aim;
-          if (!finalAim || finalAim.distance < Math.max(13, 7 / c.view.scale)) { play.aim = null; c.feedback.power(0); return { handled: true }; }
+          if (!finalAim || (finalAim.screenDistance ?? finalAim.distance) * c.view.scale < 7
+            || (finalAim.screenDistance == null && finalAim.distance < 13)) {
+            play.aim = null; c.feedback.power(0); return { handled: true };
+          }
           play.kick = { dx: finalAim.dx, dy: finalAim.dy, power: Math.max(.16, finalAim.power) };
           play.aim = null; c.flow.transition(State.BALL_CONTACT); c.audio.play('tap');
         } else if (c.flow.state === State.BALL_CONTACT) {
@@ -85,7 +99,29 @@
       this.context.play.kicker = this.context.play.controlled; this.context.audio.play('kick');
       this.context.play.flight = { maxHeight: 0, clearedKeeper: false };
       this.context.effects.shake = this.context.play.kick.power > .78 && !this.context.reducedMotion ? 5 : 0;
+      this.flightAnchors = this.cameraFlightAnchors();
       this.context.flow.transition(State.BALL_IN_MOTION);
+    }
+    cameraFlightAnchors() {
+      const c = this.context, b = c.ball;
+      const goalTime = b.vy < 0 ? (FIELD.top - b.y) / b.vy : Infinity;
+      const goalX = b.x + b.vx * goalTime;
+      const goal = window.ShoparFootball.Core.goalCorners();
+      if (goalX >= FIELD.goalLeft - 35 && goalX <= FIELD.goalRight + 35) return goal;
+      const speed = Math.hypot(b.vx, b.vy);
+      if (!speed) return goal;
+      let receiver, target, closest = 65;
+      for (const actor of [c.player, ...c.mates]) {
+        if (actor === c.play.kicker) continue;
+        const dx = actor.x - b.x, dy = actor.y - b.y;
+        const along = (dx * b.vx + dy * b.vy) / speed;
+        const offset = Math.abs(dx * b.vy - dy * b.vx) / speed;
+        if (along <= 0 || along >= goalTime * speed || offset >= closest) continue;
+        receiver = actor;
+        target = { x: b.x + along * b.vx / speed, y: b.y + along * b.vy / speed };
+        closest = offset;
+      }
+      return receiver ? [receiver, target] : goal;
     }
     receive(player, offBall = false) {
       this.context.play.controlled = player; Object.assign(this.context.ball, this.context.geometry.possessionPosition(player));
@@ -108,6 +144,7 @@
       const airborneMiss = ['high', 'wide'].includes(r.kind) && r.crossing.z > 0;
       const motionDt = dt * (r.kind === 'goal' ? .7 : airborneMiss ? MISS_PLAYBACK : .45), steps = Math.max(1, Math.ceil(motionDt * 120));
       for (let i = 0; i < steps; i++) {
+        const previous = r.kind === 'goal' ? { x: b.x, y: b.y, z: b.z } : null;
         const previousZ = b.z;
         const impact = this.context.physics.integrateBall(b, motionDt / steps, r.kind === 'goal' ? .20 : .46);
         this.ballImpact(impact);
@@ -116,20 +153,14 @@
           this.context.resultDelay.remaining = .5;
         }
         if (r.kind === 'goal') {
-          const back = FIELD.top - GOAL.depth + 3;
-          if (b.y < back) {
-            b.y = back; b.vy = Math.abs(b.vy) * .015; b.vx *= .45;
-            if (!r.netHit) { r.netHit = true; this.context.effects.netWobble = 1; }
-          }
-          if (b.x < FIELD.goalLeft + 7 || b.x > FIELD.goalRight - 7) { b.x = clamp(b.x, FIELD.goalLeft + 7, FIELD.goalRight - 7); b.vx *= -.2; }
-          if (b.y > FIELD.top - 3) { b.y = FIELD.top - 3; b.vy = -Math.abs(b.vy) * .2; }
-          if (b.z > FIELD.crossbar - 3) { b.z = FIELD.crossbar - 3; b.vz = -Math.abs(b.vz) * .2; }
+          const contact = this.context.physics.containGoalBall(b, previous);
+          this.context.effects.netImpact(r, contact, 1);
           b.vx *= Math.exp(-2 * motionDt / steps); b.vy *= Math.exp(-2 * motionDt / steps);
         }
       }
       if (['high', 'wide'].includes(r.kind) && !r.exited) {
         const v = this.context.view, radius = this.context.geometry.ballGeometry(b).radius * v.scale;
-        const x = v.x + b.x * v.scale, y = v.y + (b.y - b.z * HEIGHT_PROJECTION) * v.scale;
+        const { x, y } = this.context.geometry.worldToScreen(b);
         if (x + radius < 0 || x - radius > v.width || y + radius < 0 || y - radius > v.height) {
           r.exited = true;
           this.context.resultDelay.remaining = Math.min(this.context.resultDelay.remaining, Math.max(.45, .95 - r.elapsed));

@@ -1,10 +1,35 @@
 /* Canvas dimensions and world/screen mapping. */
 (() => {
   'use strict';
-  const { clamp, STADIUM_OFFSET } = window.ShoparFootball.Core;
+  const Core = window.ShoparFootball.Core;
+  const { clamp, FIELD, State, STADIUM_OFFSET, HEIGHT_PROJECTION, SPRITES } = Core;
+  // Project world bounds and upright points before fitting the CSS viewport.
+  function fitProjection(projection, bounds, points, width, height, maxScale = Infinity) {
+    const { left, top } = bounds, right = left + bounds.width, bottom = top + bounds.height;
+    const projected = [...points, { x: left, y: top }, { x: right, y: top },
+      { x: right, y: bottom }, { x: left, y: bottom }].map(projection.project);
+    const xs = projected.map(p => p.x), ys = projected.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const padding = 16;
+    const scale = Math.min(maxScale, Math.max(1, width - 2 * padding) / (maxX - minX),
+      Math.max(1, height - 2 * padding) / (maxY - minY));
+    return { projection, width, height, scale, x: (width - (minX + maxX) * scale) / 2,
+      y: (height - (minY + maxY) * scale) / 2 };
+  }
+
+  function worldToScreen(view, point) {
+    const p = view.projection?.project(point) || { x: point.x, y: point.y - (point.z || 0) * HEIGHT_PROJECTION };
+    return { x: view.x + p.x * view.scale, y: view.y + p.y * view.scale };
+  }
+
+  function fromScreen(view, point) {
+    return { x: (point.x - view.x) / view.scale, y: (point.y - view.y) / view.scale };
+  }
+
   class Viewport {
     constructor(game, definitions) {
       this.game = game; this.definitions = definitions;
+      this.projection = window.ShoparFootball.Projection.create(20);
       this.view = { scale: 1, x: 0, y: 0, width: 1000, height: 740 };
     }
     bindEvents() {
@@ -17,28 +42,51 @@
       this.resizeObserver = new ResizeObserver(() => this.game.resize());
       this.resizeObserver.observe(this.game.ui.canvasWrap);
     }
-    resize() {
+    resize(reframe = false) {
       const game = this.game;
       const rect = game.canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 3);
       if (!rect.width || !rect.height) return;
-      game.compact = window.matchMedia('(max-width: 1024px), (max-width: 1180px) and (max-height: 600px)').matches;
-      const bounds = game.cameraBounds();
-      const hudTop = rect.height < 500 ? 48 : 68, dragBottom = rect.height < 500 ? 48 : 72;
-      const usableHeight = Math.max(80, rect.height - hudTop - dragBottom);
-      const scale = Math.min(game.controllerPresentation().camera?.maxScale ?? Infinity, rect.width / bounds.width, usableHeight / bounds.height);
-      const next = { width: rect.width, height: rect.height, scale, x: (rect.width - bounds.width * scale) / 2 - bounds.left * scale, y: hudTop + (usableHeight - bounds.height * scale) / 2 - bounds.top * scale };
-      // Repeated visualViewport events need not cancel a gesture if mapping is unchanged.
-      const changed = Math.abs(next.scale - game.view.scale) > .0001 || Math.abs(next.x - game.view.x) > .25 || Math.abs(next.y - game.view.y) > .25;
-      if (changed && game.pointer) game.cancelPointer(game.pointer.id);
+      const compact = window.matchMedia('(max-width: 1024px), (max-width: 1180px) and (max-height: 600px)').matches;
+      const changed = rect.width !== this.view.width || rect.height !== this.view.height || compact !== game.compact;
       const width = Math.round(rect.width * dpr), height = Math.round(rect.height * dpr);
       if (game.canvas.width !== width) game.canvas.width = width;
       if (game.canvas.height !== height) game.canvas.height = height;
-      game.dpr = dpr; game.view = next;
+      game.dpr = dpr;
+      if (!reframe && !changed && this.view.projection) return;
+      if (changed && game.pointer) game.cancelPointer(game.pointer.id);
+      game.compact = compact;
+      const bounds = game.cameraBounds();
+      const hudTop = rect.height < 500 ? 48 : 68, dragBottom = rect.height < 500 ? 48 : 72;
+      const usableHeight = Math.max(80, rect.height - hudTop - dragBottom);
+      const camera = game.controllerPresentation().camera;
+      const maxScale = camera?.maxScale ?? Infinity;
+      const actors = [game.controlled, ...game.mates, ...game.defenders];
+      const points = actors.map(actor => ({
+        x: actor === game.controlled ? actor.x : actor.startX,
+        y: actor === game.controlled ? actor.y : actor.startY, z: SPRITES.playerHeight * Core.playerScale(actor) / HEIGHT_PROJECTION
+      }));
+      if (bounds.top <= FIELD.top) points.push(...Core.goalCorners());
+      points.push(game.ball, ...(camera?.anchors || []));
+      const preferred = { ...bounds, top: Math.max(bounds.top, FIELD.top),
+        height: bounds.top + bounds.height - Math.max(bounds.top, FIELD.top) };
+      const next = fitProjection(this.projection, preferred, points, rect.width, usableHeight, maxScale);
+      const minimumScale = .95 * Math.min(maxScale, rect.width / bounds.width, usableHeight / bounds.height);
+      if (next.scale < minimumScale) {
+        // Let optional runoff crop before shrinking actors below the old framing scale.
+        const required = fitProjection(this.projection,
+          { left: game.ball.x, top: game.ball.y, width: 0, height: 0 },
+          points, rect.width, usableHeight, minimumScale);
+        Object.assign(next, required);
+      }
+      next.height = rect.height;
+      next.y += hudTop;
+      game.view = next;
       game.ui.setContactTight(game.compact && rect.height < 300);
     }
     cameraBounds() {
       const game = this.game;
-      if (game.controllerPresentation().camera) return game.controllerPresentation().camera.bounds;
+      const bounds = game.controllerPresentation().camera?.bounds;
+      if (bounds) return bounds;
       // Frame the opportunity on every screen, leaving the arena to fill the display.
       // Bounds are stable during play; they update at possession/state changes only.
       const actors = [game.player, ...game.mates, ...game.defenders];
@@ -50,8 +98,40 @@
       const bottom = Math.min(725, Math.max(...ys) + 130);
       return { left, top: STADIUM_OFFSET, width: right - left, height: bottom - STADIUM_OFFSET };
     }
+    screenPoint(e) {
+      const r = this.game.canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
     toWorld(e) {
-      const game = this.game; const r = game.canvas.getBoundingClientRect(), v = game.view; return { x: (e.clientX - r.left - v.x) / v.scale, y: (e.clientY - r.top - v.y) / v.scale }; }
+      const point = fromScreen(this.view, this.screenPoint(e));
+      // Contact selection uses its own circular overlay, in camera-local coordinates.
+      return this.game.state === State.BALL_CONTACT ? point : (this.view.projection?.toGround(point) || point);
+    }
+    update(dt) {
+      const game = this.game, view = this.view;
+      if (!dt || game.reducedMotion || game.pointer || game.pendingResult || game.ui.isPaused()) return;
+      if ([State.AIMING, State.BALL_CONTACT, State.RESULT, State.SESSION_SUMMARY].includes(game.state)) return;
+      const camera = game.controllerPresentation().camera;
+      if (camera?.lock || !camera?.followBall) return;
+      const anchors = camera.anchors || [];
+      const ball = this.projection.project(game.ball);
+      const points = anchors.map(this.projection.project);
+      const radius = Core.ballGeometry(game.ball).radius;
+      const left = Math.min(ball.x - radius, ...points.map(point => point.x));
+      const right = Math.max(ball.x + radius, ...points.map(point => point.x));
+      const top = Math.min(ball.y - radius, ...points.map(point => point.y));
+      const bottom = Math.max(ball.y + radius, ...points.map(point => point.y));
+      const pad = 12, safeTop = view.height < 500 ? 60 : 80;
+      const safeBottom = view.height - (view.height < 500 ? 48 : 72);
+      const scale = Math.min(view.scale, Math.max(1, view.width - 2 * pad) / (right - left),
+        Math.max(1, safeBottom - safeTop) / (bottom - top));
+      const blend = 1 - Math.exp(-dt / .25);
+      const x = view.x + ((view.width - scale * (left + right)) / 2 - view.x) * blend;
+      const y = view.y + ((safeTop + safeBottom - scale * (top + bottom)) / 2 - view.y) * blend;
+      this.view = { ...view, scale,
+        x: clamp(x, pad - left * scale, view.width - pad - right * scale),
+        y: clamp(y, safeTop - top * scale, safeBottom - bottom * scale) };
+    }
     maxDrag() {
       const game = this.game; return clamp(Math.min(game.view.width, game.view.height) * .25, 68, 110) / game.view.scale; }
     contactGeometry() {
@@ -63,5 +143,9 @@
       return { x: (v.width / 2 - v.x) / v.scale, y: ((top + bottom) / 2 - v.y) / v.scale, r: radius / v.scale };
     }
   }
+  Viewport.fitProjection = fitProjection;
+  Viewport.worldToScreen = worldToScreen;
+  Viewport.screenToGround = (view, point) => view.projection.toGround(fromScreen(view, point));
+  Viewport.screenToGoal = (view, point) => view.projection.toGoal(fromScreen(view, point));
   window.ShoparFootball.Viewport = Viewport;
 })();

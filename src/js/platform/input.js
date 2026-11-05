@@ -28,12 +28,12 @@
       const p = game.toWorld(e);
       if (game.state === State.TITLE) { game.startSession(); return; }
       if (![State.AIMING, State.BALL_CONTACT, State.BALL_IN_MOTION, State.INTERCEPTION, State.DEFENDING].includes(game.state)) return;
-      const pointerType = e.pointerType || 'mouse';
-      const reply = game.controller?.handleInput({ type: 'down', point: p, pointerId: e.pointerId, pointerType });
+      const pointerType = e.pointerType || 'mouse', screenPoint = game.viewport.screenPoint(e);
+      const reply = game.controller?.handleInput({ type: 'down', point: p, screenPoint, pointerId: e.pointerId, pointerType });
       if (reply?.handled) {
         e.preventDefault();
         if (reply.capture && !game.pendingResult) {
-          game.pointer = { id: e.pointerId, pointerType, start: p, last: p, updateOnRelease: Boolean(reply.updateOnRelease) };
+          game.pointer = { id: e.pointerId, pointerType, start: p, screenStart: screenPoint, last: p, updateOnRelease: Boolean(reply.updateOnRelease) };
           game.canvas.setPointerCapture(e.pointerId);
         }
         game.ui.updateControllerControls();
@@ -44,16 +44,17 @@
       const game = this.game;
       if (!game.pointer || e.pointerId !== game.pointer.id) return;
       e.preventDefault(); game.pointer.last = game.toWorld(e);
-      game.controller?.handleInput({ type: 'move', point: game.pointer.last, start: game.pointer.start, pointerId: e.pointerId, pointerType: game.pointer.pointerType });
+      game.controller?.handleInput({ type: 'move', point: game.pointer.last, start: game.pointer.start,
+        screenPoint: game.viewport.screenPoint(e), screenStart: game.pointer.screenStart, pointerId: e.pointerId, pointerType: game.pointer.pointerType });
     }
     onPointerUp(e) {
       const game = this.game;
       if (!game.pointer || e.pointerId !== game.pointer.id) return;
-      e.preventDefault(); const p = game.toWorld(e), start = game.pointer.start, pointerType = game.pointer.pointerType;
+      e.preventDefault(); const p = game.toWorld(e), { start, screenStart, pointerType } = game.pointer;
       // Controllers choose whether release resamples or commits their last aim.
       if (game.pointer.updateOnRelease) game.onPointerMove(e);
       game.releasePointer();
-      game.controller?.handleInput({ type: 'up', point: p, start, pointerId: e.pointerId, pointerType });
+      game.controller?.handleInput({ type: 'up', point: p, start, screenPoint: game.viewport.screenPoint(e), screenStart, pointerId: e.pointerId, pointerType });
       game.ui.updateControllerControls();
     }
     releasePointer() {

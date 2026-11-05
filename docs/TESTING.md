@@ -94,14 +94,14 @@ Watch each case at normal playback speed on a desktop and a portrait/landscape p
 | Firm corner shot with central contact | Ground shadow stays close to the ball; it crosses below the bar, hits the net, rebounds gently, and settles inside. |
 | Central shot with central contact | The ball collides with the keeper, moves into their hands, and stays there. |
 | Central shot, full power, contact about 60% below center | The ball separates from its shadow, clears the keeper, fits under the bar, and drops into the net. |
-| Central shot, full power, contact at the bottom edge | The entire ball clears the crossbar and exits the frame; the goal and camera stay fixed, the score stays unchanged, and the result follows promptly. |
+| Central shot, full power, contact at the bottom edge | The entire ball clears the crossbar and exits the frame; the camera stops following at the crossing, the goal stays framed, the score stays unchanged, and the result follows promptly. |
 | Central shot, full power, contact about 75% below center | The ball grazes the crossbar and rebounds out; it must not be credited as a goal. |
 | Shot aimed directly at an upright | The ball rebounds off the post and is reported as a frame hit. |
 | Shot outside the posts | The ball continues wide; it must not hit or disturb the net. |
 
 During flight, the **HEIGHT** meter must distinguish rising and dropping and show the crossbar marker. Outcome banners must fit within the Canvas at every zoom/viewport and leave the active ball visible. An airborne ball above the bar must be drawn in front of the frame, while a scored ball remains behind it. Restart must clear the old banner, net motion, and crossing marker.
 
-For high misses, compare full power with 85%, 90%, and 100% below-center contact, and compare full bottom contact at 65%, 80%, and 100% power. The trajectory must vary without a stationary impact marker at the goal line. On desktop, portrait, and short landscape screens, the camera must stay fixed and the entire goal must remain visible. The ball should leave the frame without rebounding, then the result should appear within 2.5 seconds of the goal-line crossing. Verify that the apron is short and the full stands/wall/trees remain behind it in all three venues. There must be no long central corridor or camera journey after the ball.
+For high misses, compare full power with 85%, 90%, and 100% below-center contact, and compare full bottom contact at 65%, 80%, and 100% power. The trajectory must vary without a stationary impact marker at the goal line. On desktop, portrait, and short landscape screens, the entire goal must remain visible during flight, and the camera must stay fixed once the miss is resolved. The ball should leave the frame without rebounding, then the result should appear within 2.5 seconds of the goal-line crossing. Verify that the apron is short and the full stands/wall/trees remain behind it in all three venues. There must be no long central corridor or camera journey after the ball.
 
 Test full-power bottom contact with left, central, and right aim directions: these strongly lofted shots must be able to go out without rebounding. Also check shots just outside both upper goal corners. The frame uses finite rounded segments; there must be no rectangular collision area above or beside a post. Cosmetic growth of an airborne ball must not enlarge its collision radius.
 
@@ -258,3 +258,9 @@ These checks do not constitute physical-device coverage or validation of every b
 Run `node tests/browser/match.mjs` against a dedicated Chrome debugging instance (or set `GAME_URL` to the locally served subdirectory URL). It checks native match entry/replay, an eight-scene match through real simulation, open-play saves and penalty goals with native mouse/touch, and returning to Play All on desktop, portrait and short landscape. New headless coverage verifies six/eight-scene progression, both penalty replacements, score isolation, duplicate/stale completion, single attempts and practice compatibility.
 
 In this managed environment, Chromium policy blocks direct `file://` navigation; browser validation uses HTTP under `/ShoparFootball/`. This limits the browser verification, not the classic-script offline loading design.
+
+## Phase 13 camera and goal
+
+The live game uses the 20° projection on desktop and mobile. The camera stays fixed during aim, contact and captured gestures. During a flight it follows the ball together with the goal, receiver or interception area, and zooms out only if those points need more room. Reduced motion uses the initial framing and keeps the net still.
+
+Verify that a corner goal and a conceded penalty both settle inside the same goal volume. The first net contact should move only the struck panel for up to 0.45 seconds. A shot over the bar or outside the posts should leave the net still. Check that the passing and reception labels remain upright over their projected positions. Use the existing Draw the Shot, Precision Pass and penalty browser flows for native pointer checks.

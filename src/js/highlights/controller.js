@@ -54,13 +54,20 @@
         set remaining(value) { if (active && game.pendingResult) game.pendingResult.wait = value; }
       }),
       possessionReceived(offBall) { if (active) game.session.recordReception(offBall); },
-      physics: Object.freeze({ movePlayer: (...args) => game.movePlayer(...args), integrateBall: (...args) => game.integrateBall(...args), kickVelocity: (...args) => game.kickVelocity(...args), goalLineOutcome: (...args) => game.goalLineOutcome(...args) }),
-      geometry: Object.freeze({ possessionPosition: player => game.possessionPosition(player), ballGeometry: ball => game.ballGeometry(ball), maxDrag: () => game.maxDrag(), contactGeometry: () => game.contactGeometry() }),
+      physics: Object.freeze({ movePlayer: (...args) => game.movePlayer(...args), integrateBall: (...args) => game.integrateBall(...args), kickVelocity: (...args) => game.kickVelocity(...args), goalLineOutcome: (...args) => game.goalLineOutcome(...args),
+        containGoalBall: window.ShoparFootball.Physics.containGoalBall }),
+      geometry: Object.freeze({ worldToScreen: point => game.worldToScreen(point), possessionPosition: player => game.possessionPosition(player), ballGeometry: ball => game.ballGeometry(ball), maxDrag: () => game.maxDrag(), contactGeometry: () => game.contactGeometry() }),
       audio: Object.freeze({ play: kind => game.audio.play(kind) }),
       effects: Object.freeze({
         ripple(point) { if (active) game.ripples.push(point); },
         get trail() { return game.trail; }, set trail(value) { if (active) game.trail = value; },
         get shake() { return game.shake; }, set shake(value) { if (active) game.shake = value; },
+        netImpact(resolution, contact, strength) {
+          if (!active || !contact || resolution !== game.resolution || resolution.netHit) return;
+          resolution.netHit = true;
+          resolution.netImpact = { ...contact, time: game.time, strength };
+          game.netWobble = strength;
+        },
         get netWobble() { return game.netWobble; }, set netWobble(value) { if (active) game.netWobble = value; }
       }),
       complete(kind, detail) { if (active) { game.cancelPointer(game.pointer?.id); game.finish(kind, detail); } }

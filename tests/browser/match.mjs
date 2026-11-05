@@ -1,6 +1,6 @@
 // Focused Match Mode and new-highlight browser coverage using native pointer input.
 import assert from 'node:assert/strict';
-import { open, size, evaluate, send, wait, errors, close, world, screen, click, drag } from './browser.mjs';
+import { open, size, evaluate, send, wait, errors, close, world, shotPull, screen, click, drag } from './browser.mjs';
 const url = process.env.GAME_URL || new URL('../../index.html', import.meta.url).href;
 let checks = 0;
 function check(pass, label) { assert.ok(pass, label); checks++; }
@@ -50,7 +50,7 @@ try {
     check(await evaluate("footballGame.resolution.kind==='shot_saved'&&!footballGame.session.match"), 'Native open-play save');
     await evaluate('footballGame.startPractice(9)'); await until("footballGame.state==='AIMING'");
     const b=await evaluate('({x:footballGame.ball.x,y:footballGame.ball.y,pull:footballGame.maxDrag()*footballGame.view.scale})');
-    const start=await world(b.x,b.y), dx=b.x-420,dy=b.y-84,d=Math.hypot(dx,dy),target={x:start.x+dx/d*b.pull,y:start.y+dy/d*b.pull};
+    const {start,end:target}=await shotPull(b,420,84);
     if(mobile){
       await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...start,id:1}]});
       for(let i=1;i<=8;i++)await send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+(target.x-start.x)*i/8,y:start.y+(target.y-start.y)*i/8,id:1}]});
@@ -61,7 +61,7 @@ try {
     if(mobile){await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...contact,id:1}]});await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}else await click(contact.x,contact.y);
     await until("footballGame.state==='RESULT'");
     check(await evaluate("footballGame.resolution.kind==='goal'"), 'Native penalty goal');
-    await evaluate('footballGame.beginSession()'); check(await evaluate('!footballGame.session.match&&footballGame.practiceIndex===null&&footballGame.session.seriesIndices.length===10&&footballGame.definitions.length===11'), 'Play All remains available');
+    await evaluate('footballGame.beginSession()'); check(await evaluate('!footballGame.session.match&&footballGame.practiceIndex===null&&footballGame.session.seriesIndices.length===10&&footballGame.definitions.length===12'), 'Play All remains available');
   }
   check(errors.length===0, errors.join('\n')); console.log(`${checks} browser checks passed`);
 } finally { close(); }

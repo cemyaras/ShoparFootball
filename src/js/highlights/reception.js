@@ -7,7 +7,7 @@
     getPresentation() {
       const c = this.context;
       if (c.flow.state !== State.INTERCEPTION) return super.getPresentation();
-      return { runMarkers: { incoming: { from: c.ball, to: { x: 850, y: 320 }, suggested: c.play.interceptSuggested,
+      return { camera: { followBall: true, anchors: [c.play.interceptTarget || c.play.interceptSuggested] }, runMarkers: { incoming: { from: c.ball, to: { x: 850, y: 320 }, suggested: c.play.interceptSuggested,
         route: c.play.interceptTarget ? { from: c.player, to: c.play.interceptTarget } : null } } };
     }
     handleInput(input) {

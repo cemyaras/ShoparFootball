@@ -52,6 +52,40 @@
       const dx = tx - p.x, dy = ty - p.y, d = length(dx, dy), move = Math.min(d, speed * dt);
       if (d > .1) { p.x += dx / d * move; p.y += dy / d * move; p.step += move * .085; } p.tx = tx; p.ty = ty;
     },
+    containGoalBall(ball, previous, backRebound = .015, backLateralRetention = .45) {
+      const radius = Core.ballGeometry({ x: ball.x, y: FIELD.top, z: 0 }).groundRadius;
+      const back = FIELD.top - GOAL.depth, roof = GOAL.height;
+      const leftLimit = FIELD.goalLeft + radius, rightLimit = FIELD.goalRight - radius;
+      const backLimit = back + radius, roofLimit = roof - radius / HEIGHT_PROJECTION;
+      const contacts = [];
+      const hit = (surface, axis, limit, plane) => {
+        const travel = ball[axis] - previous[axis];
+        const fraction = travel ? clamp((limit - previous[axis]) / travel, 0, 1) : 0;
+        const point = { x: Core.lerp(previous.x, ball.x, fraction), y: Core.lerp(previous.y, ball.y, fraction),
+          z: Core.lerp(previous.z, ball.z, fraction) };
+        point[axis] = plane;
+        point.x = clamp(point.x, FIELD.goalLeft, FIELD.goalRight);
+        point.y = clamp(point.y, back, FIELD.top);
+        point.z = clamp(point.z, 0, roof);
+        contacts.push({ fraction, surface, ...point });
+      };
+      if (ball.y <= backLimit && ball.vy < 0) hit('back', 'y', backLimit, back);
+      if (ball.x <= leftLimit && ball.vx < 0) hit('left', 'x', leftLimit, FIELD.goalLeft);
+      if (ball.x >= rightLimit && ball.vx > 0) hit('right', 'x', rightLimit, FIELD.goalRight);
+      if (ball.z >= roofLimit && ball.vz > 0) hit('roof', 'z', roofLimit, roof);
+
+      if (ball.y <= backLimit && ball.vy < 0) {
+        ball.vy = -ball.vy * backRebound;
+        ball.vx *= backLateralRetention;
+      }
+      if ((ball.x <= leftLimit && ball.vx < 0) || (ball.x >= rightLimit && ball.vx > 0)) ball.vx *= -.2;
+      if (ball.y > FIELD.top - radius && ball.vy > 0) ball.vy *= -.2;
+      if (ball.z >= roofLimit && ball.vz > 0) ball.vz *= -.2;
+      ball.x = clamp(ball.x, leftLimit, rightLimit);
+      ball.y = clamp(ball.y, backLimit, FIELD.top - radius);
+      ball.z = Math.min(ball.z, roofLimit);
+      return contacts.reduce((first, contact) => !first || contact.fraction < first.fraction ? contact : first, null);
+    },
     goalLineOutcome(x, z) {
       // Airborne enlargement is a readability effect, not a larger collision sphere.
       const radius = Core.ballGeometry({ x, y: FIELD.top, z: 0 }).groundRadius;

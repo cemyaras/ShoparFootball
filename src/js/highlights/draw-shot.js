@@ -151,7 +151,7 @@
     constructor(context) {
       super(context); this.points = null; this.route = null; this.travel = 0; this.chip = false; this.shot = null;
       this.power = .6; this.holdTime = 0; this.drawing = false; this.gestureStart = null; this.tutorialTime = 0;
-      this.touchAim = false; this.liftDistance = 0; this.effectiveAim = null;
+      this.touchAim = false; this.liftDistance = 0; this.effectiveAim = null; this.screenStroke = null;
     }
     get aimCursor() {
       const aim = this.effectiveAim;
@@ -166,11 +166,12 @@
       const c = this.context, target = this.shot?.target;
       const aimedAtGoal = c.flow.state === State.AIMING && target && Math.abs(target.y - FIELD.top) < .01 && target.x >= FIELD.goalLeft && target.x <= FIELD.goalRight;
       const phase = c.ball.z < 5 ? 'GROUND' : c.ball.vz > 8 ? 'RISING' : c.ball.vz < -8 ? 'DROPPING' : 'AT THE TOP';
-      return { drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw toward your target in the goal.' : 'Draw from the ball. Hold for power, draw to aim, release to shoot.') : '',
+      return { camera: this.cameraPresentation(), drawToShoot: true, hint: this.context.flow.state === State.AIMING ? (this.points?.length > 1 && !this.route ? 'Draw toward your target in the goal.' : 'Draw from the ball. Hold for power, draw to aim, release to shoot.') : '',
         ariaLabel: 'Draw the Shot. Hold the ball as power cycles from 60 to 100 and back to 60 percent every 1.5 seconds. Draw to lock the current power and aim. Release to shoot. Finish higher in the goal for height. Turn CHIP on before holding for a lob.',
         shotPower: c.flow.state === State.AIMING && this.points ? { x: c.player.x,
-          y: c.player.y - window.ShoparFootball.Core.SPRITES.playerHeight * window.ShoparFootball.Core.playerScale(c.player), value: this.power, locked: this.drawing } : null,
+          y: c.player.y, z: window.ShoparFootball.Core.SPRITES.playerHeight * window.ShoparFootball.Core.playerScale(c.player) / HEIGHT_PROJECTION, value: this.power, locked: this.drawing } : null,
         shotTutorial: c.flow.state === State.AIMING && this.tutorialTime > 0 && !this.points ? ['HOLD · POWER CYCLES', 'DRAW TO LOCK POWER', 'RELEASE TO SHOOT'] : null,
+        projectedAim: c.flow.state === State.AIMING && this.points ? this.effectiveAim?.projected : null,
         shotTarget: aimedAtGoal ? { ...target, label: target.z <= 6 ? 'AIM GROUND' : target.z < GOAL.height * .65 ? 'AIM MID' : 'AIM HIGH' } : null,
         flightLabel: c.flow.state === State.BALL_IN_MOTION && !c.resolution ? `HEIGHT NOW · ${phase}` : null,
         chipControl: this.context.flow.state === State.AIMING ? { active: this.chip, disabled: Boolean(this.points) } : null,
@@ -181,6 +182,7 @@
         aimCursor: c.flow.state === State.AIMING && this.points ? this.aimCursor : null,
         shotPreview: this.context.flow.state === State.AIMING ? this.shot?.preview : null };
     }
+    cameraFlightAnchors() { return window.ShoparFootball.Core.goalCorners(); }
     sample(point) {
       if (!this.points) return;
       if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) { this.cancelInput(); return; }
@@ -210,6 +212,46 @@
       this.shot = buildShot(this.effectiveAim.points, this.chip, this.context.physics, this.power);
       this.route = this.shot?.route || null;
     }
+    sampleProjected(point) {
+      const view = this.context.view, viewport = window.ShoparFootball.Viewport;
+      const stroke = this.screenStroke, start = stroke[0];
+      if (distance(stroke.at(-1), point) < .001) return;
+      stroke.push(point);
+      let end = point;
+      if (this.touchAim) {
+        this.liftDistance = Math.max(this.liftDistance, distance(this.gestureStart, point));
+        const t = clamp(this.liftDistance / 70, 0, 1);
+        const x = clamp(point.x, 14, view.width - 14);
+        const goal = viewport.screenToGoal(view, { x, y: point.y });
+        const ceiling = viewport.worldToScreen(view, { ...goal, z: GOAL.height * 2 }).y;
+        end = { x, y: clamp(point.y - 95 * t * t * (3 - 2 * t),
+          Math.max(view.height < 500 ? 60 : 80, ceiling), view.height - 14) };
+      }
+      const dx = point.x - start.x, dy = point.y - start.y, spanPixels = Math.hypot(dx, dy);
+      const liftedX = end.x - start.x, liftedY = end.y - start.y, liftedSpan = Math.hypot(liftedX, liftedY);
+      // Move the chord to the lifted endpoint and carry its sideways bend with it.
+      const lifted = this.touchAim && spanPixels && liftedSpan ? stroke.map(p => {
+        const x = p.x - start.x, y = p.y - start.y;
+        const progress = (x * dx + y * dy) / (spanPixels * spanPixels);
+        const bend = (dx * y - dy * x) / spanPixels;
+        return { x: start.x + liftedX * progress - liftedY * bend / liftedSpan,
+          y: start.y + liftedY * progress + liftedX * bend / liftedSpan };
+      }) : [...stroke];
+      lifted[lifted.length - 1] = end;
+      const local = p => ({ x: (p.x - view.x) / view.scale, y: (p.y - view.y) / view.scale });
+      const origin = this.points[0], projection = view.projection;
+      const samples = lifted.map(local), aim = projection.aimStroke(origin, samples.at(-1));
+      const points = samples.map(aim.toCanonical);
+      points[0] = origin; points[points.length - 1] = aim.target;
+      const path = buildVisualPath(points);
+      const projectedPath = aim.toProjected ? path.map(aim.toProjected) : samples;
+      projectedPath[projectedPath.length - 1] = projection.fromAim(aim.target);
+      this.points = points;
+      this.effectiveAim = { points, path, finger: this.touchAim ? viewport.screenToGround(view, point) : null,
+        projected: { path: projectedPath, finger: this.touchAim ? local(point) : null } };
+      this.shot = buildShot(points, this.chip, this.context.physics, this.power);
+      this.route = this.shot?.route || null;
+    }
     handleInput(input) {
       const c = this.context;
       if (c.flow.state !== State.AIMING) return { handled: false };
@@ -221,9 +263,16 @@
       if (input.type === 'down') {
         if (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y) || distance(input.point, c.ball) > Math.max(55, 44 / c.view.scale)) return { handled: false };
         this.points = [{ x: c.ball.x, y: c.ball.y }]; this.route = null; this.shot = null;
-        this.gestureStart = { ...input.point }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
+        this.screenStroke = c.view.projection && input.screenPoint
+          ? [c.geometry.worldToScreen(c.ball)] : null;
+        this.gestureStart = { ...(this.screenStroke ? input.screenPoint : input.point) }; this.holdTime = 0; this.power = .6; this.drawing = false; this.tutorialTime = 0;
         this.touchAim = input.pointerType === 'touch'; this.liftDistance = 0;
         this.effectiveAim = { points: this.points, path: buildVisualPath(this.points), finger: this.touchAim ? { ...input.point } : null };
+        if (this.screenStroke) this.effectiveAim.projected = {
+          path: [c.view.projection.project(c.ball)],
+          finger: this.touchAim ? { x: (input.screenPoint.x - c.view.x) / c.view.scale,
+            y: (input.screenPoint.y - c.view.y) / c.view.scale } : null
+        };
         return { handled: true, capture: true, updateOnRelease: false };
       }
       if (!this.points) return { handled: false };
@@ -232,12 +281,16 @@
       if (release && !this.drawing) { this.cancelInput(); return { handled: true }; }
       if (!release && (!Number.isFinite(input.point.x) || !Number.isFinite(input.point.y))) { this.cancelInput(); return { handled: true }; }
       if (!this.drawing) {
-        if (distance(input.point, this.gestureStart) < 8 / c.view.scale) return { handled: true };
+        const screen = this.screenStroke && input.screenPoint;
+        if (distance(screen || input.point, this.gestureStart) < (screen ? 8 : 8 / c.view.scale)) return { handled: true };
         this.drawing = true;
       }
-      if (!release) this.sample(input.point);
+      if (!release) {
+        if (this.screenStroke && input.screenPoint) this.sampleProjected(input.screenPoint);
+        else this.sample(input.point);
+      }
       if (input.type === 'up') {
-        this.points = null;
+        this.points = null; this.screenStroke = null;
         if (!this.route) { c.feedback.toast('Draw a longer path toward goal.', 1.5); return { handled: true }; }
         c.play.kick = { dx: Math.cos(this.shot.heading), dy: Math.sin(this.shot.heading), power: clamp((this.shot.speed - 220) / 530, 0, 1) };
         this.travel = 0;
@@ -247,7 +300,7 @@
     }
     cancelInput() {
       this.points = null; this.route = null; this.shot = null; this.gestureStart = null;
-      this.touchAim = false; this.liftDistance = 0; this.effectiveAim = null;
+      this.touchAim = false; this.liftDistance = 0; this.effectiveAim = null; this.screenStroke = null;
       this.holdTime = 0; this.power = .6; this.drawing = false; this.context.feedback.power(0);
     }
     update(dt) {

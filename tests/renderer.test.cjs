@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { runtimeScripts } = require('./helpers/runtime.cjs');
 
-function headless(presentation = {}) {
+function headless(presentation = {}, angle) {
   const window = {};
-  for (const { source, filename } of runtimeScripts().filter(s => /\/(core|physics|renderer)\.js$|\/highlights\/controller\.js$/.test(s.filename))) vm.runInNewContext(source, { window }, { filename });
+  for (const { source, filename } of runtimeScripts().filter(s => /\/(core|physics|projection|renderer)\.js$|\/highlights\/controller\.js$/.test(s.filename))) vm.runInNewContext(source, { window }, { filename });
   const { Core, Physics, Controllers, CanvasRenderer } = window.ShoparFootball;
   const player = Core.makePlayer(500, 365, 'blue', 9), keeper = { ...Core.makePlayer(500, 100, 'keeper', 1), dive: 0 };
   const ball = { ...Core.possessionPosition(player), z: 0, vx: 0, vy: 0, vz: 0, spin: 0, rotation: 0, age: 0 };
@@ -20,7 +20,8 @@ function headless(presentation = {}) {
   let state = 'AIMING', previewSteps = 0;
   const context = { flow: { get state() { return state; } }, play: world.play, get resolution() { return world.resolution; } };
   const scene = Object.freeze({ ctx, get state() { return state; }, stateTime: .1, time: 1.1, dpr: 2,
-    view: Object.freeze({ width: 1000, height: 740, scale: .8, x: 40, y: 50 }),
+    view: Object.freeze({ width: 1000, height: 740, scale: .8, x: 40, y: 50,
+      ...(angle === undefined ? {} : { projection: window.ShoparFootball.Projection.create(angle) }) }),
     get player() { return world.player; }, get keeper() { return world.keeper; }, get mates() { return world.mates; }, get defenders() { return world.defenders; },
     get ball() { return world.ball; }, get resolution() { return world.resolution; }, get aim() { return world.aim; }, get contact() { return world.contact; },
     trail: world.trail, ripples: world.ripples, particles: world.particles, crowd: [], excited: false, netWobble: .3, shake: 1, flash: .1, reducedMotion: false, banner: null,
@@ -110,4 +111,59 @@ test('shared pose data resolves controlled, running, kick, tackle and keeper sav
   context.resolution = { kind: 'save' }; world.keeper.dive = .4; world.keeper.diveDirection = -1;
   const keeperPose = Controllers.actorPose(context, world.keeper);
   assert.ok(keeperPose.diving && keeperPose.holdingBall); assert.equal(keeperPose.diveLean, .75);
+});
+
+test('perspective net ball and near net precede the foreground keeper', () => {
+  const h = headless({ ballInNet: true }, 25);
+  Object.assign(h.world.ball, { x: 500, y: 70, z: 20 });
+  const order = [];
+  for (const name of ['drawPitch', 'drawTrail', 'drawBallShadow']) h.renderer[name] = () => {};
+  h.renderer.drawGoalBack = (_c, near) => order.push(near ? 'near-net' : 'far-net');
+  h.renderer.drawGoalFront = () => order.push('frame');
+  h.renderer.drawBall = () => order.push('ball');
+  h.renderer.drawPlayer = (_c, actor) => order.push(actor === h.world.keeper ? 'keeper' : 'player');
+  h.renderer.render();
+  assert.ok(order.indexOf('far-net') < order.indexOf('ball'));
+  assert.ok(order.indexOf('ball') < order.indexOf('near-net'));
+  assert.ok(order.indexOf('near-net') < order.indexOf('keeper'));
+  assert.ok(order.indexOf('frame') < order.indexOf('keeper'));
+});
+
+test('perspective goal paints each net panel once across its two layers', () => {
+  const h = headless({}, 20);
+  h.renderer.drawGoalBack(h.scene.ctx);
+  h.renderer.drawGoalBack(h.scene.ctx, true);
+  assert.equal(h.log.filter(call => call[0] === 'clip').length, 4);
+});
+
+test('perspective rendering preserves frozen world state at every preview angle', () => {
+  for (const angle of [12, 20, 25]) {
+    const h = headless({}, angle);
+    freeze(h.world);
+    const before = JSON.stringify(h.world);
+    h.renderer.render();
+    assert.equal(JSON.stringify(h.world), before);
+    assert.equal(h.log.filter(call => call[0] === 'save').length,
+      h.log.filter(call => call[0] === 'restore').length);
+  }
+});
+
+test('net deformation stays on the struck panel, fixes its anchors and expires', () => {
+  const h = headless({}, 20), { world, scene, renderer, CanvasRenderer, log } = h;
+  const draw = (near = false, target = renderer) => {
+    log.length = 0;
+    target.drawGoalBack(scene.ctx, near);
+    return [...log];
+  };
+  const still = draw(), farFromImpact = draw(true);
+  const impact = { surface: 'back', x: 500, y: 60, z: 50, time: scene.time - .1, strength: 1 };
+  world.resolution = { kind: 'goal', netHit: true, netImpact: impact };
+  const before = JSON.stringify(world.resolution), deformed = draw();
+  assert.ok(deformed.length > still.length);
+  assert.deepEqual(deformed.filter(call => call[0] === 'moveTo'), still.filter(call => call[0] === 'moveTo'));
+  assert.deepEqual(draw(true), farFromImpact);
+  assert.deepEqual(draw(false, new CanvasRenderer({ ...scene, reducedMotion: true })), still);
+  assert.equal(JSON.stringify(world.resolution), before);
+  impact.time = scene.time - .46;
+  assert.deepEqual(draw(), still);
 });

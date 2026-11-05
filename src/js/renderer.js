@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const Core = window.ShoparFootball.Core;
-  const { State, W, H, HEIGHT_PROJECTION, BACKDROP_SHIFT, STADIUM_OFFSET, GOAL, FIELD, clamp, lerp } = Core;
+  const { State, HEIGHT_PROJECTION, BACKDROP_SHIFT, STADIUM_OFFSET, GOAL, FIELD, clamp, lerp } = Core;
   class CanvasRenderer {
     constructor(scene, drawing = null) { this.scene = scene; this.drawing = drawing || this; }
     initCrowd() {
@@ -28,65 +28,84 @@
     // Rendering has no gameplay side effects.
     render() {
       const c = this.scene.ctx, v = this.scene.view;
-      c.setTransform(this.scene.dpr, 0, 0, this.scene.dpr, 0, 0); c.fillStyle = '#16331d'; c.fillRect(0, 0, v.width, v.height);
+      const projection = v.projection, presentation = this.scene.presentation();
+      c.setTransform(this.scene.dpr, 0, 0, this.scene.dpr, 0, 0);
+      c.fillStyle = projection ? this.scene.environment.palette.outside : '#16331d'; c.fillRect(0, 0, v.width, v.height);
       c.save(); c.translate(v.x, v.y); c.scale(v.scale, v.scale);
       if (this.scene.shake > 0) c.translate(Math.sin(this.scene.time * 86) * this.scene.shake, Math.cos(this.scene.time * 73) * this.scene.shake * .55);
-      this.drawing.drawPitch(c); this.drawing.drawGoalBack(c); this.drawing.drawRunMarkers(c);
+      this.drawing.drawPitch(c, projection); this.drawing.drawGoalBack(c);
+      this.drawing.drawRunMarkers(c);
+      c.save();
+      if (projection) c.transform(...projection.ground);
       this.scene.drawWorld(c);
+      c.restore();
       if (this.scene.state === State.AIMING && this.scene.aim?.power > .03) this.drawing.drawAim(c);
-      const preview = this.scene.presentation().shotPreview, aimingPath = this.scene.presentation().aimingPath;
+      const preview = presentation.shotPreview, aimingPath = presentation.projectedAim?.path || presentation.aimingPath;
+      const groundPoint = point => projection ? projection.project({ x: point.x, y: point.y }) : point;
       if (!aimingPath && preview?.length) {
         const airborne = preview.some(p => p.z > 1);
         c.save(); c.lineWidth = 2 / v.scale;
         if (airborne) {
           c.strokeStyle = '#d0f58d66'; c.setLineDash([5 / v.scale, 5 / v.scale]); c.beginPath();
-          preview.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.stroke(); c.setLineDash([]);
+          preview.forEach((point, i) => {
+            const p = groundPoint(point);
+            if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y);
+          }); c.stroke(); c.setLineDash([]);
           for (let i = Math.floor(preview.length / 4); i < preview.length; i += Math.max(1, Math.floor(preview.length / 4))) {
-            const p = preview[i], flightY = p.y - p.z * HEIGHT_PROJECTION;
+            const p = groundPoint(preview[i]), air = this.ballRenderPoint(preview[i]);
             c.strokeStyle = '#d0f58d88'; c.lineWidth = 1 / v.scale;
-            c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x, flightY); c.stroke();
+            c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(air.x, air.y); c.stroke();
             c.fillStyle = '#061b10aa'; c.beginPath(); c.ellipse(p.x, p.y, 7 / v.scale, 2.5 / v.scale, 0, 0, Math.PI * 2); c.fill();
             c.fillStyle = '#f7ffe9'; c.strokeStyle = '#163126'; c.beginPath();
-            c.arc(p.x, flightY, 3.5 / v.scale, 0, Math.PI * 2); c.fill(); c.stroke();
+            c.arc(air.x, air.y, 3.5 / v.scale, 0, Math.PI * 2); c.fill(); c.stroke();
           }
         }
         c.strokeStyle = '#d0f58d'; c.lineWidth = 3 / v.scale; c.beginPath();
-        preview.forEach((p, i) => i ? c.lineTo(p.x, p.y - (p.z || 0) * HEIGHT_PROJECTION) : c.moveTo(p.x, p.y));
+        preview.forEach((point, i) => {
+          const p = i ? this.ballRenderPoint(point) : groundPoint(point);
+          if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y);
+        });
         c.stroke();
         if (airborne) {
-          const p = preview.at(-1); c.beginPath(); c.arc(p.x, p.y - p.z * HEIGHT_PROJECTION, 4 / v.scale, 0, Math.PI * 2); c.stroke();
+          const p = this.ballRenderPoint(preview.at(-1)); c.beginPath(); c.arc(p.x, p.y, 4 / v.scale, 0, Math.PI * 2); c.stroke();
         }
         c.restore();
       }
       this.drawing.drawTrail(c); this.drawing.drawBallShadow(c, this.scene.ball);
-      const actors = [this.scene.player, ...this.scene.mates, ...this.scene.defenders, this.scene.keeper].sort((a, b) => a.y - b.y);
-      const aboveGoal = this.drawing.ballAboveGoal(), held = this.scene.resolution?.kind === 'save' || this.scene.presentation().ballHeld; let drawn = false;
-      for (const p of actors) {
-        if (!aboveGoal && !held && !drawn && this.scene.ball.z < 35 && this.scene.ball.y <= p.y) { this.drawing.drawBall(c, this.scene.ball); drawn = true; }
-        this.drawing.drawPlayer(c, p);
+      const aboveGoal = this.drawing.ballAboveGoal(), held = this.scene.resolution?.kind === 'save' || presentation.ballHeld;
+      if (projection) this.drawProjectedActors(c, aboveGoal, held);
+      else {
+        const actors = [this.scene.player, ...this.scene.mates, ...this.scene.defenders, this.scene.keeper].sort((a, b) => a.y - b.y);
+        let drawn = false;
+        for (const p of actors) {
+          if (!aboveGoal && !held && !drawn && this.scene.ball.z < 35 && this.scene.ball.y <= p.y) { this.drawing.drawBall(c, this.scene.ball); drawn = true; }
+          this.drawing.drawPlayer(c, p);
+        }
+        if (!aboveGoal && !drawn) this.drawing.drawBall(c, this.scene.ball);
+        if (this.scene.resolution?.kind === 'goal' || this.scene.presentation().ballInNet) this.drawing.drawGoalBack(c, true);
+        this.drawing.drawGoalFront(c);
       }
-      if (!aboveGoal && !drawn) this.drawing.drawBall(c, this.scene.ball);
-      if (this.scene.resolution?.kind === 'goal' || this.scene.presentation().ballInNet) this.drawing.drawGoalBack(c, true);
-      this.drawing.drawGoalFront(c);
       if (aimingPath?.length > 1) {
         c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.beginPath();
         aimingPath.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y));
         c.strokeStyle = '#10261bcc'; c.lineWidth = 5 / v.scale; c.stroke();
         c.strokeStyle = '#d0f58d'; c.lineWidth = 3 / v.scale; c.stroke(); c.restore();
       }
-      const target = this.scene.presentation().shotTarget, cursor = this.scene.presentation().aimCursor;
+      const target = presentation.shotTarget;
+      const cursor = presentation.projectedAim
+        ? { ...aimingPath.at(-1), finger: presentation.projectedAim.finger } : presentation.aimCursor;
       if (target && !aimingPath) {
-        const y = target.y - target.z * HEIGHT_PROJECTION, radius = 8 / v.scale;
+        const { x, y } = this.ballRenderPoint(target), radius = 8 / v.scale;
         c.save(); c.fillStyle = '#10261b99'; c.strokeStyle = '#e5ffc0bb'; c.lineWidth = 1.5 / v.scale;
         if (!cursor) {
-          c.beginPath(); c.arc(target.x, y, radius, 0, Math.PI * 2); c.fill(); c.stroke();
-          c.beginPath(); c.moveTo(target.x - radius * 1.5, y); c.lineTo(target.x + radius * 1.5, y);
-          c.moveTo(target.x, y - radius * 1.5); c.lineTo(target.x, y + radius * 1.5); c.stroke();
+          c.beginPath(); c.arc(x, y, radius, 0, Math.PI * 2); c.fill(); c.stroke();
+          c.beginPath(); c.moveTo(x - radius * 1.5, y); c.lineTo(x + radius * 1.5, y);
+          c.moveTo(x, y - radius * 1.5); c.lineTo(x, y + radius * 1.5); c.stroke();
         }
         c.font = `bold ${10 / v.scale}px Arial`; c.textBaseline = 'middle';
         const width = (target.label.length * 6 + 10) / v.scale;
-        c.fillStyle = '#10261bcc'; c.fillRect(target.x + 14 / v.scale, y - 9 / v.scale, width, 18 / v.scale);
-        c.fillStyle = '#e5ffc0'; c.fillText(target.label, target.x + 19 / v.scale, y); c.restore();
+        c.fillStyle = '#10261bcc'; c.fillRect(x + 14 / v.scale, y - 9 / v.scale, width, 18 / v.scale);
+        c.fillStyle = '#e5ffc0'; c.fillText(target.label, x + 19 / v.scale, y); c.restore();
       }
       if (cursor) {
         const unit = 1 / v.scale;
@@ -105,6 +124,8 @@
       }
       if (aboveGoal) this.drawing.drawBall(c, this.scene.ball);
       this.drawing.drawCrossingMarker(c);
+      c.save();
+      if (projection) c.transform(...projection.ground);
       for (const r of this.scene.ripples) {
         if (r.bounce) {
           c.strokeStyle = `rgba(255,245,210,${Math.max(0, 1 - r.age / .38) * .75})`;
@@ -116,21 +137,24 @@
         }
         c.stroke();
       }
+      c.restore();
       for (const p of this.scene.particles) {
         c.save(); c.globalAlpha = Math.min(1, p.life); c.fillStyle = p.color;
-        c.translate(p.x, p.y); c.rotate(p.rot || p.life * 4);
+        const anchor = groundPoint(p);
+        c.translate(anchor.x, anchor.y); c.rotate(p.rot || p.life * 4);
         c.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * .7);
         c.restore();
       }
       this.scene.environment.drawAtmosphere(c, this.scene.time, this.scene.reducedMotion, v);
       if (this.scene.state === State.AIMING && !this.scene.aim) this.drawing.drawPossessionHint(c);
       if (this.scene.state === State.BALL_CONTACT) this.drawing.drawContact(c);
-      if (this.scene.flash > 0 && !this.scene.reducedMotion) { c.fillStyle = `rgba(255,255,255,${this.scene.flash * .4})`; c.fillRect(0, 0, W, H); }
+      if (this.scene.flash > 0 && !this.scene.reducedMotion) { c.fillStyle = `rgba(255,255,255,${this.scene.flash * .4})`; c.fillRect(-v.x / v.scale, -v.y / v.scale, v.width / v.scale, v.height / v.scale); }
       c.restore();
-      const power = this.scene.presentation().shotPower, tutorial = this.scene.presentation().shotTutorial;
+      const { shotPower: power, shotTutorial: tutorial } = presentation;
       if (power) {
-        const x = clamp(v.x + power.x * v.scale, 54, v.width - 54);
-        const y = clamp(v.y + power.y * v.scale - 38, 64, v.height - 38);
+        const anchor = this.ballRenderPoint(power);
+        const x = clamp(v.x + anchor.x * v.scale, 54, v.width - 54);
+        const y = clamp(v.y + anchor.y * v.scale - 38, 64, v.height - 38);
         c.save(); c.fillStyle = '#10261bf2'; c.fillRect(x - 50, y, 100, 28);
         c.strokeStyle = '#bad29888'; c.lineWidth = 1; c.strokeRect(x - 50, y, 100, 28);
         c.fillStyle = power.locked ? '#d0f58d' : '#fff6a0'; c.font = 'bold 10px "Courier New", monospace';
@@ -147,6 +171,22 @@
       this.scene.drawOverlay(c);
       this.drawing.drawArcadeBanner(c);
     }
+    drawProjectedActors(c, above, held) {
+      const scene = this.scene, p = scene.view.projection;
+      const layers = [scene.player, ...scene.mates, ...scene.defenders, scene.keeper];
+      if (!above && !held) layers.push(scene.ball);
+      layers.sort((a, b) => p.depth(a) - p.depth(b));
+      const drawLayer = actor => {
+        if (actor === scene.ball) this.drawing.drawBall(c, actor);
+        else this.drawing.drawPlayer(c, actor);
+      };
+      // The goal mouth separates the net interior from actors on the pitch.
+      for (const actor of layers) if (actor.y < FIELD.top) drawLayer(actor);
+      this.drawing.drawGoalBack(c, true);
+      this.drawing.drawGoalFront(c);
+      for (const actor of layers) if (actor.y >= FIELD.top) drawLayer(actor);
+      if (held && !above) this.drawing.drawBall(c, scene.ball);
+    }
     ballAboveGoal() {
       return this.scene.resolution?.kind === 'high' || this.scene.ball.z - this.scene.geometry.ballGeometry(this.scene.ball).radius / HEIGHT_PROJECTION > FIELD.crossbar;
     }
@@ -154,14 +194,20 @@
       const r = this.scene.resolution;
       if (!r || !['goal', 'bar', 'post'].includes(r.kind) || r.elapsed > 1.2) return;
       const scale = this.scene.view.scale, p = r.crossing, color = r.kind === 'goal' ? '#d0f69a' : '#ffca70';
-      c.save(); c.translate(p.x, p.y - p.z * HEIGHT_PROJECTION);
+      const anchor = this.ballRenderPoint(p);
+      c.save(); c.translate(anchor.x, anchor.y);
       c.globalAlpha = clamp(1.4 - r.elapsed, 0, .9); c.strokeStyle = color; c.lineWidth = 2 / scale;
       c.beginPath(); c.arc(0, 0, (10 + Math.min(r.elapsed, .4) * 12) / scale, 0, Math.PI * 2); c.stroke();
       c.fillStyle = color; c.font = `bold ${12 / scale}px Arial`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(r.kind === 'goal' ? '✓' : '×', 0, 0); c.restore();
     }
-    drawStadium(c) {
+    drawStadium(c, projection) {
       // --- Retro Tribün / Taraftarlar (New Star Soccer Crowd) ---
-      c.save(); c.translate(0, STADIUM_OFFSET);
+      c.save();
+      if (projection) {
+        const rear = -32;
+        c.transform(...projection.upright(0, rear));
+        c.translate(0, -80);
+      } else c.translate(0, STADIUM_OFFSET);
       c.fillStyle = '#1e3324'; c.fillRect(70, 6, 860, 10);
       c.fillStyle = '#27402f'; c.fillRect(70, 16, 860, 10);
       c.fillStyle = '#304e39'; c.fillRect(70, 26, 860, 10);
@@ -202,19 +248,28 @@
       c.restore();
 
       // Yan panolar
+      c.save();
+      if (projection) c.transform(...projection.ground);
       c.fillStyle = '#263238'; c.fillRect(52, 84, 20, 600); c.fillRect(928, 84, 20, 600);
       for (let y = 90; y < 680; y += 60) {
         c.fillStyle = ((y / 60) % 2) ? '#e53935' : '#fdd835'; c.fillRect(54, y, 16, 24);
         c.fillStyle = ((y / 60) % 2) ? '#1e88e5' : '#43a047'; c.fillRect(930, y, 16, 24);
       }
-
+      c.restore();
     }
-    drawPitch(c) {
+    drawPitch(c, projection) {
       const env = this.scene.environment;
-      c.fillStyle = env.palette.outside; c.fillRect(-4000, -4000, 8000, 8000);
-      env.drawRunoff(c);
-      if (env.pitch === 'stadium') this.drawing.drawStadium(c);
-      else env.drawSurroundings(c, BACKDROP_SHIFT);
+      if (projection) {
+        c.save(); c.transform(...projection.ground); env.drawRunoff(c); c.restore();
+        if (env.pitch === 'stadium') this.drawStadium(c, projection);
+        else env.drawSurroundings(c, BACKDROP_SHIFT, projection);
+        c.save(); c.transform(...projection.ground);
+      } else {
+        c.fillStyle = env.palette.outside; c.fillRect(-4000, -4000, 8000, 8000);
+        env.drawRunoff(c);
+        if (env.pitch === 'stadium') this.drawing.drawStadium(c);
+        else env.drawSurroundings(c, BACKDROP_SHIFT);
+      }
       env.drawSurface(c);
 
       // --- Saha Çizgileri (Parlak Tebeşir) ---
@@ -230,63 +285,127 @@
 
       // Köşe bayrakları (rüzgarda hafif sallanan üçgen bayrak)
       const flagWave = Math.sin(this.scene.time * 6) * 3;
+      if (projection) c.restore();
       for (const x of env.pitch === 'street' ? [] : [76, 924]) {
+        c.save();
+        if (projection) {
+          c.transform(...projection.upright(x, FIELD.top));
+          c.translate(-x, -FIELD.top);
+        }
         c.strokeStyle = '#cfd8dc'; c.lineWidth = 2; c.beginPath(); c.moveTo(x, 82); c.lineTo(x, 60); c.stroke();
         c.fillStyle = '#ffeb3b'; c.beginPath();
-        c.moveTo(x, 60); c.lineTo(x + (x === 76 ? 13 : -13) + flagWave, 65); c.lineTo(x, 71); c.fill();
+        c.moveTo(x, 60); c.lineTo(x + (x === 76 ? 13 : -13) + flagWave, 65); c.lineTo(x, 71); c.fill(); c.restore();
       }
     }
+    goalRenderCorners() {
+      const projection = this.scene.view.projection;
+      if (projection) return Core.goalCorners().map(point => {
+        const { x, y } = projection.project(point);
+        return [x, y];
+      });
+      const g = this.scene.geometry.goalGeometry();
+      return [[g.left, g.top], [g.right, g.top], [g.left, g.bottom], [g.right, g.bottom],
+        [g.left + g.inset, g.backTop], [g.right - g.inset, g.backTop],
+        [g.left + g.inset, g.backBottom], [g.right - g.inset, g.backBottom]];
+    }
     drawGoalBack(c, roofOnly = false) {
-      const g = this.scene.geometry.goalGeometry(), leftBack = g.left + g.inset, rightBack = g.right - g.inset;
-      const frontTL = [g.left, g.top], frontTR = [g.right, g.top];
-      const frontBL = [g.left, g.bottom], frontBR = [g.right, g.bottom];
-      const backTL = [leftBack, g.backTop], backTR = [rightBack, g.backTop];
-      const backBL = [leftBack, g.backBottom], backBR = [rightBack, g.backBottom];
-      const panel = (points, columns, rows, fill) => {
+      const [frontTL, frontTR, frontBL, frontBR, backTL, backTR, backBL, backBR] = this.goalRenderCorners();
+      const projection = this.scene.view.projection;
+      const impact = this.scene.resolution?.netImpact;
+      const age = impact ? this.scene.time - impact.time : Infinity;
+      const amplitude = projection && !this.scene.reducedMotion && age >= 0 && age < .45
+        ? 4 * impact.strength * Math.sin(age * 24) * (1 - age / .45) ** 2 : 0;
+      const corners = projection && Core.goalCorners();
+      const panel = (points, columns, rows, fill, surface, indices) => {
         c.save(); c.beginPath(); points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
         c.fillStyle = fill; c.fill(); c.clip(); c.strokeStyle = 'rgba(235,247,235,.48)'; c.lineWidth = .85;
-        const between = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t)];
-        const strand = (a, b, phase) => {
-          const wave = Math.sin(this.scene.time * 28 + phase) * this.scene.netWobble * 4;
-          c.beginPath(); c.moveTo(...a); c.quadraticCurveTo((a[0] + b[0]) / 2 + wave, (a[1] + b[1]) / 2 + wave * .5, ...b); c.stroke();
+        const active = amplitude && impact.surface === surface;
+        const world = active && indices.map(index => corners[index]);
+        const sample = (u, v) => {
+          const point = {};
+          for (const axis of ['x', 'y', 'z']) {
+            point[axis] = lerp(lerp(world[0][axis], world[1][axis], u), lerp(world[3][axis], world[2][axis], u), v);
+          }
+          const distance = Math.hypot(point.x - impact.x, point.y - impact.y, (point.z - impact.z) * HEIGHT_PROJECTION);
+          const edge = Math.min(1, u * 8, (1 - u) * 8, v * 6, (1 - v) * 6);
+          const wave = amplitude * edge * Math.exp(-((distance / 24) ** 2));
+          if (surface === 'back') point.y -= wave;
+          else if (surface === 'roof') point.z += wave / HEIGHT_PROJECTION;
+          else point.x += surface === 'left' ? -wave : wave;
+          const { x, y } = projection.project(point);
+          return [x, y];
         };
-        for (let i = 0; i <= columns; i++) strand(between(points[0], points[1], i / columns), between(points[3], points[2], i / columns), i);
-        for (let i = 0; i <= rows; i++) strand(between(points[0], points[3], i / rows), between(points[1], points[2], i / rows), i + .7);
+        const between = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t)];
+        const strand = (a, b, t, vertical) => {
+          c.beginPath(); c.moveTo(...a);
+          if (active) {
+            for (let i = 1; i < 16; i++) c.lineTo(...(vertical ? sample(t, i / 16) : sample(i / 16, t)));
+          }
+          c.lineTo(...b); c.stroke();
+        };
+        for (let i = 0; i <= columns; i++) {
+          const t = i / columns;
+          strand(between(points[0], points[1], t), between(points[3], points[2], t), t, true);
+        }
+        for (let i = 0; i <= rows; i++) {
+          const t = i / rows;
+          strand(between(points[0], points[3], t), between(points[1], points[2], t), t, false);
+        }
         c.restore();
       };
       if (roofOnly) {
-        panel([backTL, backTR, frontTR, frontTL], 22, 3, 'rgba(230,246,232,.08)'); return;
+        panel([backTL, backTR, frontTR, frontTL], 22, 3, 'rgba(230,246,232,.16)', 'roof', [4, 5, 1, 0]);
+        if (this.scene.view.projection) panel([frontTR, backTR, backBR, frontBR], 3, 7, 'rgba(141,180,154,.18)', 'right', [1, 5, 7, 3]);
+        return;
       }
       c.save();
       c.fillStyle = 'rgba(8,27,14,.28)'; c.beginPath(); c.moveTo(...backBL); c.lineTo(...backBR); c.lineTo(...frontBR); c.lineTo(...frontBL); c.closePath(); c.fill();
-      panel([backTL, backTR, backBR, backBL], 22, 7, 'rgba(220,243,224,.06)');
-      panel([backTL, backTR, frontTR, frontTL], 22, 3, 'rgba(230,246,232,.08)');
-      panel([backTL, frontTL, frontBL, backBL], 3, 7, 'rgba(225,245,228,.05)');
-      panel([frontTR, backTR, backBR, frontBR], 3, 7, 'rgba(225,245,228,.05)');
+      panel([backTL, backTR, backBR, backBL], 22, 7, 'rgba(220,243,224,.06)', 'back', [4, 5, 7, 6]);
+      if (!this.scene.view.projection) panel([backTL, backTR, frontTR, frontTL], 22, 3, 'rgba(230,246,232,.08)');
+      panel([backTL, frontTL, frontBL, backBL], 3, 7, 'rgba(225,245,228,.05)', 'left', [4, 0, 2, 6]);
+      if (!this.scene.view.projection) panel([frontTR, backTR, backBR, frontBR], 3, 7, 'rgba(225,245,228,.05)');
       c.strokeStyle = '#b8cec0'; c.lineWidth = 2;
       c.beginPath(); c.moveTo(...frontTL); c.lineTo(...backTL); c.lineTo(...backTR); c.lineTo(...frontTR);
       c.moveTo(...backTL); c.lineTo(...backBL); c.lineTo(...frontBL); c.moveTo(...backTR); c.lineTo(...backBR); c.lineTo(...frontBR); c.stroke();
+      if (this.scene.view.projection) {
+        // Rear tubing stays darker than the mouth; roof rails catch the light.
+        c.strokeStyle = '#edf4e8'; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(...frontTL); c.lineTo(...backTL); c.lineTo(...backTR); c.lineTo(...frontTR); c.stroke();
+        c.strokeStyle = '#789583'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(...backBL); c.lineTo(...backBR); c.stroke();
+      }
       c.restore();
     }
     drawGoalFront(c) {
-      const g = this.scene.geometry.goalGeometry();
+      const [tl, tr, bl, br] = this.goalRenderCorners();
+      const stroke = (points, offset) => {
+        c.beginPath();
+        points.forEach(([x, y], i) => i ? c.lineTo(x + offset, y + offset) : c.moveTo(x + offset, y + offset));
+        c.stroke();
+      };
       c.save(); c.lineCap = 'round';
-      c.strokeStyle = '#6e8877'; c.lineWidth = GOAL.postWidth + 2;
-      c.beginPath(); c.moveTo(g.left + 1, g.bottom + 1); c.lineTo(g.left + 1, g.top + 1); c.lineTo(g.right + 1, g.top + 1); c.lineTo(g.right + 1, g.bottom + 1); c.stroke();
-      c.strokeStyle = '#ffffff'; c.lineWidth = GOAL.postWidth;
-      c.beginPath(); c.moveTo(g.left, g.bottom); c.lineTo(g.left, g.top); c.lineTo(g.right, g.top); c.lineTo(g.right, g.bottom); c.stroke();
+      c.strokeStyle = '#6e8877'; c.lineWidth = GOAL.postWidth + 2; stroke([bl, tl, tr, br], 1);
+      c.strokeStyle = '#ffffff'; c.lineWidth = GOAL.postWidth; stroke([bl, tl, tr, br], 0);
       c.strokeStyle = '#e0ede1'; c.lineWidth = 1;
-      c.beginPath(); c.moveTo(g.left - 1, g.bottom); c.lineTo(g.left - 1, g.top - 1); c.lineTo(g.right, g.top - 1); c.stroke();
+      if (this.scene.view.projection) stroke([bl, tl, tr], -1);
+      else {
+        c.beginPath(); c.moveTo(bl[0] - 1, bl[1]); c.lineTo(tl[0] - 1, tl[1] - 1);
+        c.lineTo(tr[0], tr[1] - 1); c.stroke();
+      }
       c.restore();
     }
     drawRunMarkers(c) {
       const markers = this.scene.presentation().runMarkers;
       if (!markers) return;
+      const projection = this.scene.view.projection, scale = this.scene.view.scale;
+      const labels = [];
+      c.save();
+      if (projection) c.transform(...projection.ground);
       if (markers.incoming) {
         const incoming = markers.incoming, t = incoming.suggested; c.save(); c.strokeStyle = '#c6ff00'; c.lineWidth = 2; c.setLineDash([5, 5]);
         c.beginPath(); c.moveTo(incoming.from.x, incoming.from.y); c.lineTo(incoming.to.x, incoming.to.y); c.stroke(); c.setLineDash([]);
         c.beginPath(); c.arc(t.x, t.y, 28 + Math.sin(this.scene.time * 5) * 4, 0, Math.PI * 2); c.stroke(); c.fillStyle = 'rgba(198,255,0,0.18)'; c.fill();
-        c.fillStyle = '#ffff00'; c.font = `900 ${Math.max(12, 11 / this.scene.view.scale)}px Impact, sans-serif`; c.textAlign = 'center'; c.fillText('MEET THE PASS', t.x, t.y - 42);
+        labels.push({ text: 'MEET THE PASS', color: '#ffff00', point: { x: t.x, y: t.y - 42 }, size: Math.max(12, 11 / scale) });
         if (incoming.route) { c.strokeStyle = '#76ff03'; c.setLineDash([4, 4]); c.beginPath(); c.moveTo(incoming.route.from.x, incoming.route.from.y); c.lineTo(incoming.route.to.x, incoming.route.to.y); c.stroke(); }
         c.restore();
       } else {
@@ -294,9 +413,18 @@
           const tx = marker.x, ty = marker.y;
           c.save(); c.strokeStyle = '#00e676'; c.lineWidth = 2; c.setLineDash([4, 5]); c.beginPath(); c.arc(tx, ty, 28, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
           if (marker.route) { c.beginPath(); c.moveTo(marker.route.from.x, marker.route.from.y); c.lineTo(marker.route.to.x, marker.route.to.y); c.stroke(); }
-          c.fillStyle = '#69f0ae'; c.font = `900 ${Math.max(11, 10 / this.scene.view.scale)}px Impact, sans-serif`; c.textAlign = 'center'; c.fillText('INTO SPACE', tx, ty - 38); c.restore();
+          labels.push({ text: 'INTO SPACE', color: '#69f0ae', point: { x: tx, y: ty - 38 }, size: Math.max(11, 10 / scale) }); c.restore();
         }
       }
+      c.restore();
+      c.save(); c.textAlign = 'center';
+      for (const label of labels) {
+        const point = projection ? projection.project(label.point) : label.point;
+        c.font = `900 ${label.size}px Impact, sans-serif`;
+        c.fillStyle = label.color;
+        c.fillText(label.text, point.x, point.y);
+      }
+      c.restore();
     }
     drawPlayer(c, p) {
       const pose = this.scene.actorPose(p), isControlled = pose.controlled, moving = pose.moving;
@@ -305,14 +433,27 @@
       if (pose.hidden) return;
 
       c.save();
-      c.translate(p.x, p.y + hop);
-      const scale = this.scene.geometry.playerScale(p);
+      const projection = this.scene.view.projection, scale = this.scene.geometry.playerScale(p);
+      // Limit the visual trial to the original outfield player, even after a pass.
+      const threeQuarter = !!projection && p === this.scene.player && p.team !== 'keeper';
+      if (projection) {
+        c.save(); c.transform(...projection.ground);
+        c.fillStyle = 'rgba(10,32,18,0.45)';
+        c.beginPath(); c.ellipse(p.x, p.y + 10 * scale, 11 * scale, (threeQuarter ? 8 : 5) * scale, 0, 0, Math.PI * 2); c.fill();
+        c.restore();
+        // Explicit keeper hands use the same vertical plane as glove contact.
+        const footOffset = pose.keeperHands ? 0 : 10 * scale;
+        c.transform(...projection.upright(p.x, p.y + footOffset));
+        c.translate(0, hop - footOffset);
+      } else c.translate(p.x, p.y + hop);
       c.scale(scale, scale);
       if (pose.tackling || pose.stumbling) c.rotate(pose.lean);
 
       // 1. Zemin Gölgelendirmesi
-      c.fillStyle = 'rgba(10,32,18,0.45)';
-      c.beginPath(); c.ellipse(0, 10 - hop * 0.3, 11, 5, 0, 0, Math.PI * 2); c.fill();
+      if (!projection) {
+        c.fillStyle = 'rgba(10,32,18,0.45)';
+        c.beginPath(); c.ellipse(0, 10 - hop * 0.3, 11, 5, 0, 0, Math.PI * 2); c.fill();
+      }
 
       // Kaleci plonjon rotasyonu
       if (pose.diving) {
@@ -332,88 +473,129 @@
         shirtMain = '#c6ff00'; shirtDark = '#aeea00'; shortColor = '#212121'; sockColor = '#212121';
       }
 
-      // 2. Bacaklar & Kramponlar (16-bit Pixel Art)
-      const legL_stride = isShooting ? -stride * 1.5 : stride;
-      const legR_stride = tackling ? 12 : isShooting ? 6 : -stride;
-
-      // Çoraplar
-      c.fillStyle = sockColor;
-      c.fillRect(-6, 2 + legL_stride, 4, 6);
-      c.fillRect(2, 2 + legR_stride, 4, 6);
-      c.fillStyle = '#ffffff'; // üst beyaz şerit
-      c.fillRect(-6, 2 + legL_stride, 4, 1.5);
-      c.fillRect(2, 2 + legR_stride, 4, 1.5);
-
-      // Kramponlar (siyah krampon + beyaz taban)
-      c.fillStyle = '#111111';
-      c.fillRect(-6, 8 + legL_stride, 4, 3);
-      c.fillRect(2, 8 + legR_stride, 4, 3);
-      c.fillStyle = '#ffffff';
-      c.fillRect(-6, 10 + legL_stride, 4, 1);
-      c.fillRect(2, 10 + legR_stride, 4, 1);
-
-      // 3. Şort
-      c.fillStyle = shortColor;
-      c.fillRect(-7, -4, 14, 7);
-      c.fillStyle = 'rgba(0,0,0,0.22)';
-      c.fillRect(-1, -1, 2, 4);
-
-      // 4. Forma / Gövde
-      c.fillStyle = shirtMain;
-      c.fillRect(-8, -15, 16, 12);
-      c.fillStyle = shirtDark;
-      c.fillRect(-8, -15, 2.5, 12);
-      c.fillRect(5.5, -15, 2.5, 12);
-      c.fillStyle = '#ffffff'; // Yaka
-      c.fillRect(-3, -15, 6, 2);
-
-      // Sırt Numarası
-      c.fillStyle = p.team === 'keeper' ? '#212121' : '#ffffff';
-      c.font = 'bold 7px monospace'; c.textAlign = 'center';
-      c.fillText(String(p.number), 0, -7);
-
-      // 5. Kollar & Eller
-      if (celebration) {
-        c.fillStyle = shirtMain;
-        c.fillRect(-11, -22, 3, 9); c.fillRect(8, -22, 3, 9);
-        c.fillStyle = skinColor;
-        c.fillRect(-11, -24, 3, 3); c.fillRect(8, -24, 3, 3);
-      } else if (pose.keeperHands) {
-        for (const hand of pose.keeperHands) {
-          c.strokeStyle = shirtMain; c.lineWidth = 4; c.beginPath(); c.moveTo(0, -12); c.lineTo(hand.x, hand.y); c.stroke();
-          c.fillStyle = '#ffffff'; c.fillRect(hand.x - 2.5, hand.y - 2.5, 5, 5);
+      if (threeQuarter) {
+        // Depth edges use the pitch basis expressed in this upright local frame.
+        const depthX = projection.ground[2] / projection.ground[0];
+        const depthY = projection.ground[3] - projection.ground[1] * depthX;
+        const face = (points, color) => {
+          c.fillStyle = color; c.beginPath();
+          points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y));
+          c.closePath(); c.fill();
+        };
+        const block = (x, y, width, height, depth, main, side, top) => {
+          const dx = -depth * depthX, dy = -depth * depthY;
+          face([[x, y], [x + dx, y + dy], [x + width + dx, y + dy], [x + width, y]], top);
+          face([[x + width, y], [x + width + dx, y + dy], [x + width + dx, y + height + dy], [x + width, y + height]], side);
+          c.fillStyle = main; c.fillRect(x, y, width, height);
+        };
+        const left = isShooting ? -stride * 1.5 : stride;
+        const right = tackling ? 12 : isShooting ? 6 : -stride;
+        for (const [x, step] of [[2, right], [-6, left]]) {
+          block(x, 2 + step, 4, 6, 3, sockColor, shirtDark, '#e5eff3');
+          block(x, 8 + step, 4, 3, 6, '#151d22', '#38434b', '#4b5860');
+          c.fillStyle = '#e3e9df'; c.fillRect(x, 10 + step, 4, 1);
         }
-      } else if (pose.diving) {
-        c.fillStyle = shirtMain;
-        c.fillRect(-12, -18, 4, 10); c.fillRect(8, -18, 4, 10);
-        c.fillStyle = '#ffffff'; // Kaleci beyaz eldivenleri
-        c.fillRect(-13, -22, 5, 5); c.fillRect(8, -22, 5, 5);
-      } else if (pose.holdingBall) {
-        c.fillStyle = shirtMain; c.fillRect(-11, -13, 7, 5); c.fillRect(4, -13, 7, 5);
-        c.fillStyle = '#ffffff'; c.fillRect(-6, -12, 5, 5); c.fillRect(1, -12, 5, 5);
-      } else if (p.team === 'keeper') {
-        // A wider ready stance makes the keeper's coverage readable in the goalmouth.
-        c.fillStyle = shirtMain;
-        c.fillRect(-14, -14, 6, 4); c.fillRect(8, -14, 6, 4);
-        c.fillRect(-17, -18, 4, 7); c.fillRect(13, -18, 4, 7);
-        c.fillStyle = '#ffffff';
-        c.fillRect(-18, -22, 5, 5); c.fillRect(13, -22, 5, 5);
+        // The far arm sits behind the torso; existing stride and celebration drive both arms.
+        const armFar = celebration ? -22 : -14 + (moving ? stride * .8 : 0);
+        const armNear = celebration ? -22 : -14 - (moving ? stride * .8 : 0);
+        block(6, armFar, 3, 8, 3, shirtDark, shirtDark, shirtMain);
+        block(6, celebration ? -25 : armFar + 8, 3, 3, 2, '#d58b5b', '#bf764e', skinColor);
+        block(-7, -4, 13, 7, 5, shortColor, '#b1bdc4', '#f2f5ee');
+        c.fillStyle = 'rgba(0,0,0,.22)'; c.fillRect(-1, 0, 2, 3);
+        block(-8, -15, 14, 12, 6, shirtMain, shirtDark, '#53a6eb');
+        c.fillStyle = '#e8f1eb'; c.fillRect(-3, -15, 5, 1.5);
+        c.font = 'bold 7px monospace'; c.textAlign = 'center'; c.fillText(String(p.number), -1, -7);
+        block(-10, armNear, 3, 8, 3, shirtMain, shirtDark, '#53a6eb');
+        block(-10, celebration ? -25 : armNear + 8, 3, 3, 2, skinColor, '#d58b5b', '#ffd09a');
+        block(-5, -23, 9, 8, 5, skinColor, '#d58b5b', '#ffd09a');
+        // Back three-quarter head: visible crown and one ear, facing upfield.
+        block(-5.5, -26, 10, 5, 5, hairColor, '#b28a35', '#ffe078');
+        c.fillStyle = skinColor; c.fillRect(3, -21, 2, 3);
       } else {
-        const armL = moving ? -stride * 0.8 : 0;
-        const armR = moving ? stride * 0.8 : 0;
-        c.fillStyle = shirtMain;
-        c.fillRect(-10, -14 + armL, 3, 8); c.fillRect(7, -14 + armR, 3, 8);
-        c.fillStyle = p.team === 'keeper' ? '#ffffff' : skinColor;
-        c.fillRect(-10, -6 + armL, 3, 3); c.fillRect(7, -6 + armR, 3, 3);
-      }
+        // 2. Bacaklar & Kramponlar (16-bit Pixel Art)
+        const legL_stride = isShooting ? -stride * 1.5 : stride;
+        const legR_stride = tackling ? 12 : isShooting ? 6 : -stride;
 
-      // 6. Kafa & Saç
-      c.fillStyle = skinColor;
-      c.fillRect(-5, -23, 10, 8);
-      c.fillStyle = '#212121'; // Gözler
-      c.fillRect(-3, -20, 2, 2); c.fillRect(1, -20, 2, 2);
-      c.fillStyle = hairColor;
-      c.fillRect(-6, -26, 12, 4); c.fillRect(-6, -23, 2, 3); c.fillRect(4, -23, 2, 3);
+        // Çoraplar
+        c.fillStyle = sockColor;
+        c.fillRect(-6, 2 + legL_stride, 4, 6);
+        c.fillRect(2, 2 + legR_stride, 4, 6);
+        c.fillStyle = '#ffffff'; // üst beyaz şerit
+        c.fillRect(-6, 2 + legL_stride, 4, 1.5);
+        c.fillRect(2, 2 + legR_stride, 4, 1.5);
+
+        // Kramponlar (siyah krampon + beyaz taban)
+        c.fillStyle = '#111111';
+        c.fillRect(-6, 8 + legL_stride, 4, 3);
+        c.fillRect(2, 8 + legR_stride, 4, 3);
+        c.fillStyle = '#ffffff';
+        c.fillRect(-6, 10 + legL_stride, 4, 1);
+        c.fillRect(2, 10 + legR_stride, 4, 1);
+
+        // 3. Şort
+        c.fillStyle = shortColor;
+        c.fillRect(-7, -4, 14, 7);
+        c.fillStyle = 'rgba(0,0,0,0.22)';
+        c.fillRect(-1, -1, 2, 4);
+
+        // 4. Forma / Gövde
+        c.fillStyle = shirtMain;
+        c.fillRect(-8, -15, 16, 12);
+        c.fillStyle = shirtDark;
+        c.fillRect(-8, -15, 2.5, 12);
+        c.fillRect(5.5, -15, 2.5, 12);
+        c.fillStyle = '#ffffff'; // Yaka
+        c.fillRect(-3, -15, 6, 2);
+
+        // Sırt Numarası
+        c.fillStyle = p.team === 'keeper' ? '#212121' : '#ffffff';
+        c.font = 'bold 7px monospace'; c.textAlign = 'center';
+        c.fillText(String(p.number), 0, -7);
+
+        // 5. Kollar & Eller
+        if (celebration) {
+          c.fillStyle = shirtMain;
+          c.fillRect(-11, -22, 3, 9); c.fillRect(8, -22, 3, 9);
+          c.fillStyle = skinColor;
+          c.fillRect(-11, -24, 3, 3); c.fillRect(8, -24, 3, 3);
+        } else if (pose.keeperHands) {
+          for (const hand of pose.keeperHands) {
+            c.strokeStyle = shirtMain; c.lineWidth = 4; c.beginPath(); c.moveTo(0, -12); c.lineTo(hand.x, hand.y); c.stroke();
+            c.fillStyle = '#ffffff'; c.fillRect(hand.x - 2.5, hand.y - 2.5, 5, 5);
+          }
+        } else if (pose.diving) {
+          c.fillStyle = shirtMain;
+          c.fillRect(-12, -18, 4, 10); c.fillRect(8, -18, 4, 10);
+          c.fillStyle = '#ffffff'; // Kaleci beyaz eldivenleri
+          c.fillRect(-13, -22, 5, 5); c.fillRect(8, -22, 5, 5);
+        } else if (pose.holdingBall) {
+          c.fillStyle = shirtMain; c.fillRect(-11, -13, 7, 5); c.fillRect(4, -13, 7, 5);
+          c.fillStyle = '#ffffff'; c.fillRect(-6, -12, 5, 5); c.fillRect(1, -12, 5, 5);
+        } else if (p.team === 'keeper') {
+          // A wider ready stance makes the keeper's coverage readable in the goalmouth.
+          c.fillStyle = shirtMain;
+          c.fillRect(-14, -14, 6, 4); c.fillRect(8, -14, 6, 4);
+          c.fillRect(-17, -18, 4, 7); c.fillRect(13, -18, 4, 7);
+          c.fillStyle = '#ffffff';
+          c.fillRect(-18, -22, 5, 5); c.fillRect(13, -22, 5, 5);
+        } else {
+          const armL = moving ? -stride * 0.8 : 0;
+          const armR = moving ? stride * 0.8 : 0;
+          c.fillStyle = shirtMain;
+          c.fillRect(-10, -14 + armL, 3, 8); c.fillRect(7, -14 + armR, 3, 8);
+          c.fillStyle = p.team === 'keeper' ? '#ffffff' : skinColor;
+          c.fillRect(-10, -6 + armL, 3, 3); c.fillRect(7, -6 + armR, 3, 3);
+        }
+
+        // 6. Kafa & Saç
+        c.fillStyle = skinColor;
+        c.fillRect(-5, -23, 10, 8);
+        c.fillStyle = '#212121'; // Gözler
+        c.fillRect(-3, -20, 2, 2); c.fillRect(1, -20, 2, 2);
+        c.fillStyle = hairColor;
+        c.fillRect(-6, -26, 12, 4); c.fillRect(-6, -23, 2, 3); c.fillRect(4, -23, 2, 3);
+
+      }
 
       // 7. Kontrol İşaretçisi (NSS Tarzı Yanıp Sönen Sarı Ok)
       if (isControlled) {
@@ -431,6 +613,7 @@
       if (this.scene.resolution?.kind === 'save' || this.scene.presentation().ballHeld) return;
       const geometry = this.scene.geometry.ballGeometry(b);
       const baseR = geometry.groundRadius, height = geometry.height;
+      const projection = this.scene.view.projection;
       c.save();
 
       // 1. Yerdeki gölge (NSS tarzı yükseldikçe küçülen ve solan gölge)
@@ -438,25 +621,35 @@
       const shadowAlpha = Math.max(0.24, 0.5 / (1 + b.z * 0.008));
       c.fillStyle = `rgba(10,32,16,${shadowAlpha})`;
       c.beginPath();
+      c.save();
+      if (projection) c.transform(...projection.ground);
       c.ellipse(b.x + 2, b.y + 4, baseR * 1.15 * shadowScale, baseR * 0.5 * shadowScale, 0, 0, Math.PI * 2);
       c.fill();
 
+      c.restore();
       // Havalandığında yükseklik kılavuz çizgisi
       if (b.z > 8) {
         c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = Math.max(1.1, .8 / this.scene.view.scale); c.setLineDash([3, 5]);
-        c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(b.x, b.y - height); c.stroke(); c.setLineDash([]);
+        const ground = projection ? projection.project({ x: b.x, y: b.y }) : b;
+        const air = this.ballRenderPoint(b, height);
+        c.beginPath(); c.moveTo(ground.x, ground.y); c.lineTo(air.x, air.y); c.stroke(); c.setLineDash([]);
       }
       c.restore();
     }
+    ballRenderPoint(ball, height = (ball.z || 0) * HEIGHT_PROJECTION) {
+      const projection = this.scene.view.projection;
+      return projection ? projection.project(ball) : { x: ball.x, y: ball.y - height };
+    }
     drawBall(c, b) {
-      const geometry = this.scene.geometry.ballGeometry(b), visualR = geometry.radius, height = geometry.height;
+      const geometry = this.scene.geometry.ballGeometry(b), visualR = geometry.radius;
+      const point = this.ballRenderPoint(b, geometry.height);
       c.save();
       if ([State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.scene.state)) {
         c.strokeStyle = 'rgba(255,255,255,.45)'; c.lineWidth = 1 / this.scene.view.scale;
-        c.beginPath(); c.arc(b.x, b.y - height, visualR + 2 / this.scene.view.scale, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(point.x, point.y, visualR + 2 / this.scene.view.scale, 0, Math.PI * 2); c.stroke();
       }
       // 2. Topun Kendisi (Telstar Klasik 32 Panel)
-      c.translate(b.x, b.y - height);
+      c.translate(point.x, point.y);
       c.rotate(b.rotation);
 
       const sphereGrad = c.createRadialGradient(-visualR * 0.3, -visualR * 0.3, visualR * 0.05, 0, 0, visualR);
@@ -490,7 +683,8 @@
         c.strokeStyle = `rgba(255,255,235,${alpha * 1.8})`;
         // A trail must not be wider than the small on-field ball it follows.
         c.lineWidth = this.scene.geometry.ballGeometry(b).groundRadius * (.18 + i / this.scene.trail.length * .55);
-        c.beginPath(); c.moveTo(a.x, a.y - a.z * HEIGHT_PROJECTION); c.lineTo(b.x, b.y - b.z * HEIGHT_PROJECTION); c.stroke();
+        const from = this.ballRenderPoint(a), to = this.ballRenderPoint(b);
+        c.beginPath(); c.moveTo(from.x, from.y); c.lineTo(to.x, to.y); c.stroke();
       } c.restore();
     }
     drawAim(c) {
@@ -499,12 +693,13 @@
 
       const p = a.power; // 0.0 - 1.0
       const bx = this.scene.ball.x, by = this.scene.ball.y;
-      const angle = Math.atan2(a.dy, a.dx);
+      const angle = Math.atan2(a.dy, a.dx), projection = this.scene.view.projection;
 
       c.save();
+      if (projection) c.transform(...projection.ground);
 
       // 1. Gerideki Sapan Lastik Çekme Hattı (Slingshot Elastic Pull)
-      const pull = Math.min(a.distance, this.scene.geometry.maxDrag());
+      const pull = a.distance * Math.min(1, this.scene.geometry.maxDrag() / (a.screenDistance ?? a.distance));
       const pullX = bx - a.dx * pull;
       const pullY = by - a.dy * pull;
 
@@ -606,7 +801,10 @@
       c.lineTo(tipX - 4, 0);
       c.stroke();
 
-      c.restore(); // rotate/translate restore
+      c.restore(); // Arrow rotation.
+      c.restore();
+
+      c.save();
 
       // 3. Okun İlerisindeki Hafif Yörünge İzi (Hedefe doğru kesik hat)
       const preview = { ...this.scene.ball, ...this.scene.physics.kickVelocity({ dx: a.dx, dy: a.dy, power: Math.max(.16, a.power) }, { x: 0, y: 0, timedOut: false }) };
@@ -616,11 +814,13 @@
       c.beginPath();
       const leadX = bx + a.dx * (totalLen + 18);
       const leadY = by + a.dy * (totalLen + 18);
-      c.moveTo(leadX, leadY);
+      const lead = this.ballRenderPoint({ x: leadX, y: leadY });
+      c.moveTo(lead.x, lead.y);
       for (let i = 0; i < 28; i++) {
         this.scene.physics.integrateBall(preview, .034);
         if (i > 4) {
-          c.lineTo(preview.x, preview.y - preview.z * HEIGHT_PROJECTION);
+          const point = this.ballRenderPoint(preview);
+          c.lineTo(point.x, point.y);
         }
         if (preview.y < 84 || preview.x < 76 || preview.x > 924) break;
       }
@@ -635,7 +835,8 @@
       const labelY = by + a.dy * labelDist + a.dx * sideOffset;
 
       c.save();
-      c.translate(labelX, labelY);
+      const label = this.ballRenderPoint({ x: labelX, y: labelY });
+      c.translate(label.x, label.y);
       c.fillStyle = 'rgba(12, 18, 24, 0.9)';
       const boxW = p >= 0.95 ? 68 : 50;
       c.fillRect(-boxW / 2, -12, boxW, 24);
@@ -658,7 +859,7 @@
       c.restore(); // ana save/restore
     }
     drawPossessionHint(c) {
-      const b = this.scene.ball, pulse = 1 + Math.sin(this.scene.time * 4) * .09;
+      const b = this.ballRenderPoint(this.scene.ball), pulse = 1 + Math.sin(this.scene.time * 4) * .09;
       c.save(); c.strokeStyle = '#ffeb3b88'; c.lineWidth = 2; c.beginPath(); c.arc(b.x, b.y, 35 * pulse, 0, Math.PI * 2); c.stroke();
       if (this.scene.presentation().drawToShoot) { c.restore(); return; }
       c.strokeStyle = '#ffeb3b'; c.lineWidth = 2; c.beginPath(); c.moveTo(b.x, b.y + 69); c.lineTo(b.x, b.y + 86); c.lineTo(b.x - 4, b.y + 82); c.moveTo(b.x, b.y + 86); c.lineTo(b.x + 4, b.y + 82); c.stroke(); c.restore();

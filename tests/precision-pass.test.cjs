@@ -11,7 +11,7 @@ function fixture({mates=[[650,450],[440,300]],defenders=[[500,380],[580,320]]}={
   const context={player,mates:mates.map((p,i)=>Core.makePlayer(...p,'blue',7+i)),defenders:defenders.map((p,i)=>Core.makePlayer(...p,'red',4+i)),
     keeper:Core.makePlayer(500,100,'keeper',1),ball:{...Core.possessionPosition(player),z:0,vx:0,vy:0,vz:0,spin:0,age:0,rotation:0},
     view:{scale:1,x:0,y:0,width:1000,height:740},play:{controlled:player},flow:{state:Core.State.DEFENDING},
-    physics:Physics,geometry:Core,effects:{trail:[],ripple(){}},feedback:{power(){},toast(){}},audio:{play(){}},
+    physics:Physics,geometry:{ ...Core, worldToScreen: p => p },effects:{trail:[],ripple(){}},feedback:{power(){},toast(){}},audio:{play(){}},
     complete(kind){results.push({kind,ball:{...context.ball},feet:[...context.defenders,...context.mates].map(a=>Core.possessionPosition(a))});}};
   const controller=new Controller(context);controller.enter();return{controller,context,results};
 }

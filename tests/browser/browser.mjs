@@ -15,5 +15,17 @@ export async function size(width,height,mobile=false){await send('Emulation.setD
 export async function open(url='http://127.0.0.1:8000'){await send('Runtime.enable');await send('Page.enable');await send('Page.navigate',{url});await wait(600);}
 export async function click(x,y){await send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});}
 export async function drag(x,y,ex,ey){await send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});for(let i=1;i<=8;i++){await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:x+(ex-x)*i/8,y:y+(ey-y)*i/8,button:'left',buttons:1});}await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:ex,y:ey,button:'left',clickCount:1});}
-export async function world(x,y){return evaluate(`(()=>{const g=footballGame,r=g.canvas.getBoundingClientRect();return {x:r.left+g.view.x+${x}*g.view.scale,y:r.top+g.view.y+${y}*g.view.scale}})()`);}
+export async function world(x,y,z=0){
+  return evaluate(`(()=>{
+    const g=footballGame,r=g.canvas.getBoundingClientRect(),v=g.view;
+    const p=g.state==='BALL_CONTACT'?{x:v.x+${x}*v.scale,y:v.y+${y}*v.scale}:g.worldToScreen({x:${x},y:${y},z:${z}});
+    return {x:r.left+p.x,y:r.top+p.y};
+  })()`);
+}
+// Pull away from the visible target while preserving CSS-pixel power.
+export async function shotPull(ball,x,y,power=1){
+  const start=await world(ball.x,ball.y),target=await world(x,y);
+  const dx=start.x-target.x,dy=start.y-target.y,d=Math.hypot(dx,dy);
+  return {start,end:{x:start.x+dx/d*ball.pull*power,y:start.y+dy/d*ball.pull*power}};
+}
 export function close(){ws.close();}

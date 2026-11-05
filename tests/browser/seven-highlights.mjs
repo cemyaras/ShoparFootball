@@ -1,13 +1,14 @@
-import {open,size,evaluate,screen,send,wait,errors,close,world,click,drag} from './browser.mjs';
+import {open,size,evaluate,screen,send,wait,errors,close,world,click,drag,shotPull} from './browser.mjs';
 const url=process.env.GAME_URL || new URL('../../index.html', import.meta.url).href,report=[];
-const assert=(name,pass,detail)=>report.push({name,pass,...(detail?{detail}:{})});
+const assert=(name,pass,detail)=>{report.push({name,pass,...(detail?{detail}:{})});if(!pass)console.error(name,detail);};
 async function center(id){return evaluate(`(()=>{const r=document.getElementById('${id}').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);}
 const touch=(type,p)=>send('Input.dispatchTouchEvent',{type,touchPoints:p?[{x:p.x,y:p.y,id:1,radiusX:7,radiusY:7}]:[]});
 async function tap(p){await touch('touchStart',p);await touch('touchEnd');await wait(40);}
 async function fastForward(){return evaluate(`(()=>{const g=footballGame;cancelAnimationFrame(g.raf);for(let i=0;i<1600&&!['RESULT','AIMING','SESSION_SUMMARY'].includes(g.state);i++)g.update(1/120);g.lastTime=null;g.raf=requestAnimationFrame(g.frame);return {state:g.state,stats:{...g.stats},kind:g.pendingResult?.kind}})()`);}
 async function kick(x,y,power){
- const b=await evaluate('({x:footballGame.ball.x,y:footballGame.ball.y,pull:footballGame.maxDrag()*footballGame.view.scale})'),p=await world(b.x,b.y),dx=b.x-x,dy=b.y-y,d=Math.hypot(dx,dy);
- await touch('touchStart',p);for(let i=1;i<=8;i++)await touch('touchMove',{x:p.x+dx/d*b.pull*power*i/8,y:p.y+dy/d*b.pull*power*i/8});await wait(60);await touch('touchEnd');await wait(240);
+ const b=await evaluate('({x:footballGame.ball.x,y:footballGame.ball.y,pull:footballGame.maxDrag()*footballGame.view.scale})');
+ const {start:p,end}=await shotPull(b,x,y,power);
+ await touch('touchStart',p);for(let i=1;i<=8;i++)await touch('touchMove',{x:p.x+(end.x-p.x)*i/8,y:p.y+(end.y-p.y)*i/8});await wait(60);await touch('touchEnd');await wait(240);
  assert('Native drag reaches contact',await evaluate("footballGame.state==='BALL_CONTACT'"));
  const cg=await evaluate('footballGame.contactGeometry()');await tap(await world(cg.x,cg.y));await wait(260);return fastForward();
 }

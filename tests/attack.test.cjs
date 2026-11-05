@@ -17,8 +17,10 @@ function headless(reception = false) {
   const flow = { state: 'HIGHLIGHT_INTRO', elapsed: 0, transition(next) { this.state = next; this.elapsed = 0; events.push(next); } };
   const context = Object.freeze({ player, ball, keeper, mates: [], defenders: [], play, flow, resultDelay, memory: {},
     view: { scale: 1, x: 0, y: 0, width: 1000, height: 740 }, time: 0, reducedMotion: true,
-    physics: { ...Physics }, geometry: { possessionPosition: p => Core.possessionPosition(p), ballGeometry: b => Core.ballGeometry(b), maxDrag: () => 180, contactGeometry: () => ({ x: 500, y: 370, r: 100 }) },
-    effects: { trail: [], shake: 0, netWobble: 0, ripple: () => {} }, audio: { play: kind => events.push(kind) },
+    physics: { ...Physics }, geometry: { worldToScreen: p => ({ x: p.x, y: p.y - p.z * Core.HEIGHT_PROJECTION }), possessionPosition: p => Core.possessionPosition(p), ballGeometry: b => Core.ballGeometry(b), maxDrag: () => 180, contactGeometry: () => ({ x: 500, y: 370, r: 100 }) },
+    effects: { trail: [], shake: 0, netWobble: 0, netImpact(result, contact, strength) {
+      if (contact && !result.netHit) { result.netHit = true; this.netWobble = strength; }
+    }, ripple: () => {} }, audio: { play: kind => events.push(kind) },
     feedback: { power: () => {}, toast: () => {}, flight: () => {}, contactTimer: () => {}, invalidContact: () => events.push('invalid-contact') },
     possessionReceived: offBall => received.push(offBall), complete(kind) { resultDelay.pending = true; events.push(kind); } });
   const controller = new (reception ? ReceptionController : AttackController)(context);

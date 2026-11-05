@@ -80,9 +80,10 @@
       this.input.bindWindow();
     }
     destroy() { this.cancelPointer(this.pointer?.id); this.controllerScope?.deactivate(); this.controller?.dispose(); this.handlers.forEach(remove => remove()); this.resizeObserver.disconnect(); cancelAnimationFrame(this.raf); this.audio.context?.close(); }
-    resize() { return this.viewport.resize(); }
+    resize(reframe) { return this.viewport.resize(reframe); }
     cameraBounds() { return this.viewport.cameraBounds(); }
     toWorld(e) { return this.viewport.toWorld(e); }
+    worldToScreen(point) { return window.ShoparFootball.Viewport.worldToScreen(this.view, point); }
     maxDrag() { return this.viewport.maxDrag(); }
     contactGeometry() { return this.viewport.contactGeometry(); }
     initCrowd() { return this.renderer.initCrowd(); }
@@ -128,7 +129,7 @@
       this.cancelPointer(this.pointer?.id); this.state = next; this.stateTime = 0;
       this.ui.transition(next);
       // Contact and flight retain the aim camera; a new possession reframes the play.
-      if ([State.HIGHLIGHT_INTRO, State.AIMING, State.INTERCEPTION, State.DEFENDING].includes(next)) this.resize();
+      if ([State.HIGHLIGHT_INTRO, State.AIMING, State.INTERCEPTION, State.DEFENDING].includes(next)) this.resize(true);
       this.updateUI();
     }
     startSession() {
@@ -231,6 +232,7 @@
           if (!this.pendingResult) this.ui.setHint(hint);
         }
       }
+      this.viewport.update(dt);
     }
 
     updateFlightUI() { return this.ui.updateFlightUI(); }
@@ -249,7 +251,7 @@
     ballAboveGoal() { return this.renderer.ballAboveGoal(); }
     drawCrossingMarker(c) { return this.renderer.drawCrossingMarker(c); }
     drawStadium(c) { return this.renderer.drawStadium(c); }
-    drawPitch(c) { return this.renderer.drawPitch(c); }
+    drawPitch(c, projection) { return this.renderer.drawPitch(c, projection); }
     drawGoalBack(c, roofOnly = false) { return this.renderer.drawGoalBack(c, roofOnly); }
     drawGoalFront(c) { return this.renderer.drawGoalFront(c); }
     drawRunMarkers(c) { return this.renderer.drawRunMarkers(c); }

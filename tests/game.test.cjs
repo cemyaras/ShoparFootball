@@ -176,7 +176,7 @@ test('balls above the goal are drawn after the crossbar, low balls before it', (
   const order = [];
   g.drawGoalFront = () => order.push('frame');
   g.drawBall = () => order.push('ball');
-  g.ball.z = 150;
+  Object.assign(g.ball, { x: 500, y: 83, z: 150 });
   g.render();
   assert.ok(order.lastIndexOf('ball') > order.indexOf('frame'));
   order.length = 0;
@@ -428,15 +428,16 @@ test('a clear over-bar miss has no stationary impact marker at the goal line', (
 
 test('the goal stays framed throughout misses on desktop and compact screens', () => {
   for (const [width, height] of [[390, 600], [844, 250], [1280, 800], [320, 280]]) {
-    const { game: g } = fixture(width, height);
+    const { game: g, window } = fixture(width, height);
     start(g); kick(g, { cy: 1 }); until(g, () => g.pendingResult);
     const originalView = JSON.stringify(g.view);
     while (g.pendingResult) {
       g.update(1 / 60); g.render();
       assert.equal(JSON.stringify(g.view), originalView, 'a miss must not pan or zoom away from the goal');
-      const goal = g.goalGeometry(), v = g.view;
-      assert.ok(v.y + goal.top * v.scale >= 0);
-      assert.ok(v.y + goal.bottom * v.scale <= height);
+      for (const corner of window.ShoparFootball.Core.goalCorners()) {
+        const p = g.worldToScreen(corner);
+        assert.ok(p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height);
+      }
     }
     assert.equal(g.resolution.exited, true);
     g.restart();
@@ -505,8 +506,28 @@ test('an advanced keeper can still save a central ground shot', () => {
   assert.equal(g.keeper.y, 174);
 });
 
+function screenPointer(point, id = 17) {
+  return { button: 0, isPrimary: true, pointerId: id, clientX: point.x, clientY: point.y, preventDefault() {} };
+}
 function defensePointer(g, point, id = 17) {
-  return { button: 0, isPrimary: true, pointerId: id, clientX: g.view.x + point.x * g.view.scale, clientY: g.view.y + point.y * g.view.scale, preventDefault() {} };
+  return screenPointer(g.worldToScreen(point), id);
+}
+function shotScreen(g, x, y) {
+  return g.worldToScreen(y < 84 ? { x, y: 84, z: (84 - y) / .52 } : { x, y });
+}
+function touchEndFor(start, target, bend = 0) {
+  let low = target.y, high = target.y + 95;
+  for (let i = 0; i < 60; i++) {
+    const y = (low + high) / 2;
+    let travel = 0;
+    for (let step = 1; step <= 30; step++) {
+      const t = step / 30;
+      travel = Math.max(travel, Math.hypot((target.x - start.x) * t + bend * Math.sin(Math.PI * t), (y - start.y) * t));
+    }
+    const t = Math.min(1, travel / 70);
+    if (y - 95 * t * t * (3 - 2 * t) < target.y) low = y; else high = y;
+  }
+  return { x: target.x, y: (low + high) / 2 };
 }
 function holdChase(g, id = 17) { g.onPointerDown(defensePointer(g, { x: 800, y: 600 }, id)); }
 function releaseTackle(g, id = 17) { g.onPointerUp(defensePointer(g, { x: 800, y: 600 }, id)); }
@@ -1060,6 +1081,35 @@ test('native canvas guards prevent selection and dragging without intercepting s
   for(const type of ['contextmenu','selectstart','dragstart','touchstart','touchend'])assert.equal(g.canvas.listenerCount(type),0);
 });
 
+test('classic shot uses CSS drag thresholds and the same power and contact for mouse and touch', () => {
+  const aims = [];
+  for (const [pointerType, dpr] of [['mouse', 1], ['touch', 3]]) {
+    const { game: g, window } = fixture(390, 844); window.devicePixelRatio = dpr; start(g, 0);
+    const event = point => ({ ...screenPointer(point), pointerType });
+    const ball = g.worldToScreen(g.ball);
+    const pull = (x, y) => {
+      g.onPointerDown(event(ball));
+      g.onPointerUp(event({ x: ball.x + x, y: ball.y + y }));
+    };
+    pull(0, 6.9); assert.equal(g.state, 'AIMING');
+    pull(0, 7.1); assert.equal(g.state, 'BALL_CONTACT');
+    start(g, 0);
+    for (const [x, y] of [[0, 48], [28.8, 38.4]]) {
+      g.onPointerDown(event(ball)); g.onPointerMove(event({ x: ball.x + x, y: ball.y + y }));
+      assert.ok(Math.abs(g.aim.power - 48 / (g.maxDrag() * g.view.scale)) < 1e-9);
+      g.cancelPointer(g.pointer.id);
+    }
+    pull(28.8, 38.4);
+    const contact = g.contactGeometry(), view = g.view;
+    const hit = event({ x: view.x + (contact.x + contact.r * .4) * view.scale,
+      y: view.y + (contact.y - contact.r * .2) * view.scale });
+    g.onPointerDown(hit); g.onPointerUp(hit);
+    assert.ok(Math.abs(g.contact.x - .4) < 1e-9 && Math.abs(g.contact.y + .2) < 1e-9);
+    aims.push([g.kick.dx, g.kick.dy, g.kick.power, g.contact.x, g.contact.y]);
+  }
+  assert.deepEqual(aims[0], aims[1]);
+});
+
 test('native rapid touch taps are guarded without duplicating pointer input or changing shot state', () => {
   const {game:g}=fixture();start(g,10);
   const inputs=[],handle=g.controller.handleInput;
@@ -1148,10 +1198,10 @@ function penaltyAttempt(variant = 0, fps = 120, delay = .15, direction = null, h
   for (let i = 0; i < fps * 10 && g.state !== 'RESULT'; i++) {
     if (!attempted && delay !== null && controller.phase === 'flight' && g.ball.age >= delay * .4) {
       attempted = true;
-      const start = { x: 500, y: 240 }, side = direction ?? (Math.sign(controller.shot.x - 500) || 1);
-      g.onPointerDown(defensePointer(g, start));
+      const start = g.worldToScreen({ x: 500, y: 240 }), side = direction ?? (Math.sign(controller.shot.x - 500) || 1);
+      g.onPointerDown(screenPointer(start));
       const end = { x: start.x + side * 100, y: start.y + ((high ?? controller.shot.z > 30) ? -100 : 0) };
-      g.onPointerMove(defensePointer(g, end)); g.onPointerUp(defensePointer(g, end));
+      g.onPointerMove(screenPointer(end)); g.onPointerUp(screenPointer(end));
     }
     g.update(1 / fps);
   }
@@ -1186,6 +1236,18 @@ test('penalty swipe commits immediately at a screen-sized threshold and cancella
   assert.equal(JSON.stringify([g.ball, g.keeper, g.controller.elapsed]), before);
   elements.get('highlight-dialog').close(); g.restart(); g.update(.9);
   assert.equal(g.controller.dive, null); assert.equal(g.stats.saves, 0); assert.equal(g.pointer, null);
+});
+
+test('penalty swipe classifies height along the projected goal axes', () => {
+  for (const side of [-1, 1]) for (const ratio of [.44, .46]) {
+    const { game: g } = fixture(390, 844); start(g, 7);
+    const [a, b] = g.view.projection.ground;
+    const from = { x: 180, y: 300 };
+    const to = { x: from.x + side * 40 * a, y: from.y + side * 40 * b - ratio * 40 };
+    g.onPointerDown(screenPointer(from)); g.onPointerMove(screenPointer(to));
+    assert.equal(g.controller.dive.direction, side);
+    assert.equal(g.controller.dive.high, ratio > .45);
+  }
 });
 
 test('penalty practice retry restores saves and final summary includes a saved penalty', () => {
@@ -1289,8 +1351,10 @@ test('open-play high shots and central shots can be saved with visible height an
     for (let i = 0; i < fps * 10 && g.state !== 'RESULT'; i++) {
       const c = g.controller;
       if (variant !== 2 && !attempted && c.phase === 'flight' && g.ball.age >= (c.shot.z > 30 ? .18 : .04)) {
-        attempted = true; const p = { x: 500, y: 240 }, end = { x: 500 + Math.sign(c.shot.x - 500) * 100, y: c.shot.z > 30 ? 140 : 240 };
-        g.onPointerDown(defensePointer(g, p)); g.onPointerMove(defensePointer(g, end)); g.onPointerUp(defensePointer(g, end));
+        attempted = true;
+        const p = g.worldToScreen({ x: 500, y: 240 });
+        const end = { x: p.x + Math.sign(c.shot.x - 500) * 100, y: p.y - (c.shot.z > 30 ? 100 : 0) };
+        g.onPointerDown(screenPointer(p)); g.onPointerMove(screenPointer(end)); g.onPointerUp(screenPointer(end));
       }
       g.update(1 / fps);
     }
@@ -1454,16 +1518,18 @@ test('Draw the Shot defenders collide with the physical curve away from the visu
   assert.ok(Math.hypot(g.ball.x-target.x,g.ball.y-target.y)<22);
 });
 
-function drawElevatedShot(g, x, height, chip = false, bend = 0, power = .6) {
-  if (chip) g.controller.handleInput({ type: 'chip-toggle' });
-  const start = { x: g.ball.x, y: g.ball.y }, y = 84 - height * .52;
-  g.onPointerDown(defensePointer(g, start));
+function drawElevatedShot(g, x, height, chip, bend = 0, power = .6) {
+  g.controller.chip = chip;
+  const start = g.worldToScreen(g.ball), end = g.worldToScreen({ x, y: 84, z: height });
+  g.onPointerDown(screenPointer(start));
   if (power > .6) g.update((power - .6) / .4 * .75);
+  const origin = g.worldToScreen({ x: 500, y: 84 }), sideways = g.worldToScreen({ x: 500 + bend, y: 84 });
   for (let i = 1; i <= 30; i++) {
-    const t = i / 30;
-    g.onPointerMove(defensePointer(g, { x: start.x + (x - start.x) * t + bend * Math.sin(Math.PI * t), y: start.y + (y - start.y) * t }));
+    const t = i / 30, offset = Math.sin(Math.PI * t);
+    g.onPointerMove(screenPointer({ x: start.x + (end.x - start.x) * t + (sideways.x - origin.x) * offset,
+      y: start.y + (end.y - start.y) * t + (sideways.y - origin.y) * offset }));
   }
-  g.onPointerUp(defensePointer(g, { x, y }));
+  g.onPointerUp(screenPointer(end));
 }
 
 test('Draw the Shot elevated and chip attempts resolve through real keeper, defender and frame contacts', () => {
@@ -1515,7 +1581,7 @@ test('Draw the Shot targeting feedback and chip tempo reflect current physics wi
   for (const [height, label] of [[0,'GROUND'],[60,'MID'],[90,'HIGH']]) {
     g.startPractice(10); g.update(.9);
     const start = { x:g.ball.x,y:g.ball.y }, end = { x:500,y:84-height*.52 };
-    g.onPointerDown(defensePointer(g,start)); g.onPointerMove(defensePointer(g,end));
+    g.onPointerDown(defensePointer(g,start)); g.onPointerMove(screenPointer(shotScreen(g,end.x,end.y)));
     const target = g.controllerPresentation().shotTarget;
     assert.equal(target.label,`AIM ${label}`); assert.ok(Math.abs(target.y-target.z*.52-end.y)<.02);
     const before = JSON.stringify(g.controller.route); g.render(); assert.equal(JSON.stringify(g.controller.route),before);
@@ -1578,24 +1644,25 @@ test('Draw the Shot lifts touch aiming in CSS pixels without adding bend or movi
     const {game:g,window}=fixture(width,height); window.devicePixelRatio=dpr;
     g.startPractice(10);g.update(.9);g.resize();
     const start={x:g.ball.x,y:g.ball.y},scale=g.view.scale;
-    const touch=p=>({...defensePointer(g,p),pointerType:'touch'});
-    g.onPointerDown(touch(start));g.update(.375);
-    g.onPointerMove(touch({x:start.x,y:start.y-3/scale}));
+    const screenStart=g.worldToScreen(start);
+    const touch=p=>({...screenPointer(p),pointerType:'touch'});
+    g.onPointerDown(touch(screenStart));g.update(.375);
+    g.onPointerMove(touch({x:screenStart.x,y:screenStart.y-3}));
     assert.equal(g.controller.drawing,false);
     assert.equal(g.controllerPresentation().aimCursor.x,start.x);assert.equal(g.controllerPresentation().aimCursor.y,start.y);
     assertTouchAim(g);
     for(const pixels of [8.1,35,70]) {
-      g.onPointerMove(touch({x:start.x,y:start.y-pixels/scale}));
-      const cursor=g.controllerPresentation().aimCursor,t=Math.min(pixels/70,1);
+      g.onPointerMove(touch({x:screenStart.x,y:screenStart.y-pixels}));
+      const {path,finger}=g.controllerPresentation().projectedAim,t=Math.min(pixels/70,1);
       assertTouchAim(g);
-      assert.ok(Math.abs((cursor.finger.y-cursor.y)*scale-95*t*t*(3-2*t))<1e-8);
+      assert.ok(Math.abs((finger.y-path.at(-1).y)*scale-95*t*t*(3-2*t))<1e-8);
       if(g.controller.shot) {assert.equal(g.controller.shot.spin,0);assert.equal(g.controller.route.start.y,start.y);}
     }
-    const end={x:415,y:84-90*.52+95/scale};
+    const targetScreen=shotScreen(g,415,84-90*.52), end=touchEndFor(screenStart,targetScreen);
     // Start a fresh straight stroke toward the corner after checking the lift ramp.
-    g.cancelPointer(g.pointer.id);g.onPointerDown(touch(start));g.update(.375);
+    g.cancelPointer(g.pointer.id);g.onPointerDown(touch(screenStart));g.update(.375);
     for(let i=1;i<=30;i++) {
-      const t=i/30;g.onPointerMove(touch({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t}));
+      const t=i/30;g.onPointerMove(touch({x:screenStart.x+(end.x-screenStart.x)*t,y:screenStart.y+(end.y-screenStart.y)*t}));
     }
     const c=g.controller,shot=c.shot,cursor=g.controllerPresentation().aimCursor;
     assertTouchAim(g);
@@ -1618,23 +1685,24 @@ test('Draw the Shot keeps the lifted cursor and computed target inside the same 
   for(const [width,height] of [[390,844],[844,390]]) for(const edge of ['top','left','right','bottom']) {
     const {game:g}=fixture(width,height);g.startPractice(10);g.update(.9);
     const start={x:g.ball.x,y:g.ball.y},v=g.view;
-    const end={x:edge==='left'?(-100-v.x)/v.scale:edge==='right'?(width+100-v.x)/v.scale:start.x,
-      y:((edge==='bottom'?height+100:-100)-v.y)/v.scale};
-    const event=p=>({...defensePointer(g,p),pointerType:'touch'});
-    g.onPointerDown(event(start));
+    const screenStart=g.worldToScreen(start);
+    const end={x:edge==='left'?-100:edge==='right'?width+100:screenStart.x,y:edge==='bottom'?height+100:-100};
+    const event=p=>({...screenPointer(p),pointerType:'touch'});
+    g.onPointerDown(event(screenStart));
     for(let i=1;i<=20;i++) {
-      const t=i/20;g.onPointerMove(event({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t}));
+      const t=i/20;g.onPointerMove(event({x:screenStart.x+(end.x-screenStart.x)*t,y:screenStart.y+(end.y-screenStart.y)*t}));
     }
     const c=g.controller,cursor=c.getPresentation().aimCursor;
     assertTouchAim(g);
-    assert.ok(v.x+cursor.x*v.scale>=14-1e-8&&v.x+cursor.x*v.scale<=width-14+1e-8);
-    assert.ok(v.y+cursor.y*v.scale>=(height<500?60:80)-1e-8&&v.y+cursor.y*v.scale<=height-14+1e-8);
+    const visible=c.getPresentation().projectedAim.path.at(-1);
+    assert.ok(v.x+visible.x*v.scale>=14-1e-8&&v.x+visible.x*v.scale<=width-14+1e-8);
+    assert.ok(v.y+visible.y*v.scale>=(height<500?60:80)-1e-8&&v.y+visible.y*v.scale<=height-14+1e-8);
     if(edge!=='bottom') {
       const shot=c.shot;assert.ok(shot);assert.equal(shot.spin,0);
       assert.equal(shot.route.start.x,start.x);assert.equal(shot.route.start.y,start.y);
       assert.ok(Math.abs(shot.target.x-cursor.x)<1e-8);
       assert.ok(Math.abs(shot.target.y-shot.target.z*.52-cursor.y)<1e-8);
-      g.onPointerUp(event(start));assert.equal(c.shot,shot);assert.equal(g.state,'BALL_IN_MOTION');
+      g.onPointerUp(event(screenStart));assert.equal(c.shot,shot);assert.equal(g.state,'BALL_IN_MOTION');
     } else {g.cancelPointer(g.pointer.id);assert.equal(g.state,'AIMING');}
   }
 });
@@ -1642,12 +1710,13 @@ test('Draw the Shot keeps the lifted cursor and computed target inside the same 
 test('Draw the Shot shares visual curves while preserving mouse coordinates and cancelling either input', () => {
   for(const pointerType of ['touch','mouse']) for(const bend of [-45,45]) {
     const {game:g}=fixture(390,844);g.startPractice(10);g.update(.9);
-    const start={x:g.ball.x,y:g.ball.y},scale=g.view.scale;
-    const event=p=>({...defensePointer(g,p),pointerType});
-    const end={x:500,y:84+(pointerType==='touch'?95/scale:0)};
+    const start=g.worldToScreen(g.ball),scale=g.view.scale;
+    const event=p=>({...screenPointer(p),pointerType});
+    const target=shotScreen(g,500,84);
+    const end=pointerType==='touch'?touchEndFor(start,target,bend*scale):target;
     g.onPointerDown(event(start));
     for(let i=1;i<=30;i++) {
-      const t=i/30;g.onPointerMove(event({x:start.x+(end.x-start.x)*t+bend*Math.sin(Math.PI*t),y:start.y+(end.y-start.y)*t}));
+      const t=i/30;g.onPointerMove(event({x:start.x+(end.x-start.x)*t+bend*scale*Math.sin(Math.PI*t),y:start.y+(end.y-start.y)*t}));
     }
     assert.equal(Math.sign(g.controller.shot.spin),-Math.sign(bend));
     assert.ok(Math.abs(g.controller.shot.target.y-84)<1e-8);
@@ -1753,4 +1822,79 @@ test('Draw the Shot cycles six shooting positions across retry, restart and re-e
   assert.equal(g.controllerPresentation().shotTutorial,null);
   g.restart();g.update(.9);assert.notEqual(JSON.stringify([g.player.x,g.player.y]),retry);
   assert.equal(g.controller.power,.6);assert.equal(g.controller.chip,false);
+});
+
+test('the projected camera locks during aiming and follows flight with the whole goal visible', () => {
+  const { game: g, window } = fixture(390, 844);
+  g.reducedMotion = false;
+  start(g);
+  const locked = g.view;
+  const pointer = defensePointer(g, g.ball);
+  g.onPointerDown(pointer); g.update(.1); g.resize();
+  assert.equal(g.view, locked);
+  g.cancelPointer(pointer.pointerId);
+  kick(g, { x: 420 });
+  g.update(1 / 60);
+  assert.notDeepEqual([g.view.x, g.view.y], [locked.x, locked.y]);
+  const corners = window.ShoparFootball.Core.goalCorners();
+  for (let frame = 0; frame < 240 && !g.pendingResult; frame++) {
+    for (const corner of corners) {
+      const p = g.worldToScreen(corner);
+      assert.ok(p.x >= 0 && p.x <= g.view.width && p.y >= 0 && p.y <= g.view.height);
+    }
+    g.update(1 / 60);
+  }
+  assert.ok(g.pendingResult);
+  const resultView = g.view;
+  g.update(.1);
+  assert.equal(g.view, resultView);
+});
+
+test('goals from either side use the same physical net and record a single surface impact', () => {
+  const { game: attack, window } = shot({ x: 420 });
+  const { game: defense } = fixture();
+  start(defense, 7);
+  until(defense, () => defense.pendingResult);
+  assert.equal(defense.resolution.kind, 'penalty_conceded');
+  const { Core } = window.ShoparFootball, { FIELD, GOAL, HEIGHT_PROJECTION } = Core;
+  for (const game of [attack, defense]) {
+    assert.equal(game.resolution.netImpact, null);
+    until(game, () => game.resolution.netHit);
+    const impact = game.resolution.netImpact;
+    assert.equal(impact.surface, 'back');
+    assert.equal(impact.y, FIELD.top - GOAL.depth);
+    until(game, () => game.state === 'RESULT');
+    assert.equal(game.resolution.netImpact, impact);
+    const ball = game.ball, radius = Core.ballGeometry({ ...ball, z: 0 }).groundRadius;
+    assert.ok(ball.y >= FIELD.top - GOAL.depth + radius && ball.y <= FIELD.top - radius);
+    assert.ok(ball.x >= FIELD.goalLeft + radius && ball.x <= FIELD.goalRight - radius);
+    assert.ok(ball.z <= GOAL.height - radius / HEIGHT_PROJECTION);
+    game.restart();
+    assert.equal(game.resolution, null);
+  }
+});
+
+test('pass framing keeps the target inside the safe area and honors reduced motion', () => {
+  for (const reducedMotion of [false, true]) {
+    const { game: g } = fixture(568, 320);
+    g.reducedMotion = reducedMotion;
+    start(g, 11);
+    const destination = { x: 700, y: 410 };
+    g.onPointerDown(defensePointer(g, destination));
+    const locked = g.view;
+    g.update(.6);
+    assert.equal(g.view, locked);
+    g.onPointerUp(defensePointer(g, destination));
+    assert.equal(g.controller.phase, 'flight');
+    let previousScale = locked.scale;
+    for (let i = 0; i < 120 && !g.pendingResult; i++) {
+      g.update(1 / 120);
+      const point = g.worldToScreen(destination);
+      assert.ok(point.x >= 12 - 1e-9 && point.x <= g.view.width - 12 + 1e-9);
+      assert.ok(g.view.scale <= previousScale);
+      previousScale = g.view.scale;
+    }
+    if (reducedMotion) assert.equal(g.view, locked);
+    else assert.notEqual(g.view, locked);
+  }
 });

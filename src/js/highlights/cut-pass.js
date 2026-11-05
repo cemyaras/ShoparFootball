@@ -36,7 +36,9 @@
     getPresentation() {
       return { ariaLabel: 'Cut the Pass. Tap a destination to cut the passing lane. The passer releases early under pressure. Read the receiver’s run and intercept the moving ball.',
         hint: this.phase === 'planning' ? 'React quickly. Cut across the receiver’s run.' : 'Meet the ball before the red receiver.',
-        hideHelp: this.finished, camera: { bounds: { left: 190, top: 150, width: 730, height: 500 }, maxScale: 1.5 } };
+        hideHelp: this.finished, camera: { bounds: { left: 190, top: 150, width: 730, height: 500 }, maxScale: 1.5,
+          lock: this.phase !== 'passing', followBall: this.phase === 'passing',
+          anchors: [this.receiver, this.passTarget, this.target].filter(Boolean) } };
     }
     getActorPose(player) {
       return { moving: this.isMoving(player), kicking: player === this.passer && this.phase === 'passing' && this.elapsed - this.passStartedAt < .28 };
@@ -132,7 +134,8 @@
     drawOverlay(c) {
       if (this.finished || this.target) return;
       const g = this.context, v = g.view, p = g.player;
-      const x = clamp(v.x + p.x * v.scale, 85, v.width - 85), y = clamp(v.y + p.y * v.scale + 36, 110, v.height - 30);
+      const anchor = g.geometry.worldToScreen(p);
+      const x = clamp(anchor.x, 85, v.width - 85), y = clamp(anchor.y + 36, 110, v.height - 30);
       c.save(); c.fillStyle = '#0b2019ee'; c.fillRect(x - 80, y - 14, 160, 28);
       c.font = 'bold 12px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#d0f58d'; c.fillText('TAP TO CUT THE PASS', x, y); c.restore();
     }

@@ -34,7 +34,7 @@
       const timing = this.timing();
       return { ariaLabel: 'Win the Ball. Hold anywhere on the pitch to chase. Release when the ring around the ball turns green to tackle.',
         hint: this.phase === 'planning' ? 'Hold anywhere to chase. Release when green.' : timing.ready ? 'Release now!' : 'Keep holding · watch the ball.',
-        hideHelp: this.finished, camera: { bounds: { left: 270, top: 240, width: 600, height: 360 }, maxScale: 1.5 } };
+        hideHelp: this.finished, camera: { bounds: { left: 270, top: 240, width: 600, height: 360 }, maxScale: 1.5, lock: true } };
     }
     getActorPose(player) {
       const tackle = this.tackle;
@@ -142,7 +142,7 @@
     drawOverlay(c) {
       if (this.finished) return;
       const timing = this.timing(), game = this.context, v = game.view, ball = game.ball;
-      const x = v.x + ball.x * v.scale, y = v.y + ball.y * v.scale;
+      const { x, y } = game.geometry.worldToScreen(ball);
       const ready = timing.ready, radius = Math.max(17, game.geometry.ballGeometry(ball).radius * v.scale + 7);
       c.save(); c.lineWidth = ready ? 4 : 2;
       c.strokeStyle = ready ? '#c6ff70' : '#ffc477';

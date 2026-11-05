@@ -1,3 +1,4 @@
+import { screen as projectedScreen, strokeTo } from './stroke.mjs';
 // Optional Playwright flow. Set PLAYWRIGHT_MODULE to an external playwright/index.mjs if needed.
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -15,10 +16,13 @@ async function snapshot(page) {
     return JSON.parse(JSON.stringify({ state: g.state, ball: g.ball, view: g.view, rect: { left: r.left, top: r.top },
       pointer: g.pointer, captured: g.pointer && g.canvas.hasPointerCapture(g.pointer.id),
       power: c.power, holdTime: c.holdTime, drawing: c.drawing, shot: c.shot, aim: c.effectiveAim,
-      cursor: c.aimCursor, events: window.inputEvents, selection: String(getSelection()), scroll: [scrollX, scrollY] }));
+      cursor: c.aimCursor, liftDistance: c.liftDistance, events: window.inputEvents, selection: String(getSelection()), scroll: [scrollX, scrollY] }));
   });
 }
-function screen(s, p) { return { x: Math.round(s.rect.left + s.view.x + p.x * s.view.scale), y: Math.round(s.rect.top + s.view.y + p.y * s.view.scale) }; }
+function screen(s,p) {
+  const target=projectedScreen(s,p);
+  return {x:Math.round(target.x),y:Math.round(target.y)};
+}
 async function setup(page, clock = true) {
   await page.goto(url); await page.waitForFunction(() => window.footballGame);
   await page.evaluate(() => {
@@ -105,16 +109,19 @@ try {
     }
     for (const [kind, bend, height, chip] of [['straight',0,0,false],['left',-40,0,false],['right',40,0,false],['high',0,90,false],['chip',25,60,true]]) {
       start = await setup(page); if (chip) await tap('#chip-button');
-      const end = { x: 450, y: 84 - height * .52 + (touch ? 95 / start.view.scale : 0) };
-      await pointer('down', screen(start, start.ball)); await page.clock.runFor(375);
-      for (let i = 1; i <= 20; i++) {
-        const t = i / 20;
-        await pointer('move', screen(start, { x: start.ball.x + (end.x - start.ball.x) * t + bend * Math.sin(Math.PI * t), y: start.ball.y + (end.y - start.ball.y) * t }));
+      const origin=screen(start,start.ball), target=screen(start,{x:450,y:84,z:height});
+      const stroke=strokeTo(origin,target,bend*start.view.scale,touch,20);
+      await pointer('down',origin); await page.clock.runFor(375);
+      for (const p of stroke) {
+        await pointer('move',p);
         await page.clock.runFor(16);
       }
       const s = await snapshot(page), path = s.aim.path, cursor = s.cursor;
       check(path[0].x === start.ball.x && path[0].y === start.ball.y && path.at(-1).x === cursor.x && path.at(-1).y === cursor.y, `${name}/${kind}: anchored aiming line and cursor`);
-      check(touch ? Math.abs((cursor.finger.y - cursor.y) * s.view.scale - 95) < 1e-6 : cursor.finger === null, `${name}/${kind}: finger offset`);
+      const liftProgress=Math.min(1,s.liftDistance/70);
+      const {path:visible,finger}=s.aim.projected;
+      check(touch ? Math.abs((finger.y-visible.at(-1).y)*s.view.scale-95*liftProgress**2*(3-2*liftProgress))<.05
+        : cursor.finger === null, `${name}/${kind}: finger offset`);
       check(bend ? Math.sign(s.shot.spin) === -Math.sign(bend) : s.shot.spin === 0, `${name}/${kind}: existing curve behavior`);
       check(await page.evaluate(() => {
         const c = footballGame.controller, C = ShoparFootball.DrawShotController;

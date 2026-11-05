@@ -15,7 +15,7 @@
       const match = game.session.match;
       if (match) match.record(kind, success);
       else game.outcomes[game.index] = success;
-      game.resolution = { kind, elapsed: 0, netHit: false, landing: null, crossing: { x: game.ball.x, y: game.ball.y, z: game.ball.z } };
+      game.resolution = { kind, elapsed: 0, netHit: false, netImpact: null, landing: null, crossing: { x: game.ball.x, y: game.ball.y, z: game.ball.z } };
       const chip = success && game.flight?.clearedKeeper;
       game.stats[descriptor.stat]++;
       if (descriptor.sound) game.audio.play(descriptor.sound);

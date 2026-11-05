@@ -37,8 +37,12 @@
       c.fillStyle = 'rgba(255,255,255,.035)';
       for (let i = 0; i < 90; i++) c.fillRect(83 + i * 137 % 830, -25 + i * 37 % 104, 2, 3);
     }
-    drawSurroundings(c, rearOffset = 0) {
-      c.save(); c.translate(0, rearOffset);
+    drawSurroundings(c, rearOffset = 0, projection) {
+      c.save();
+      if (projection) {
+        c.transform(...projection.upright(0, -32));
+        c.translate(0, -82);
+      } else c.translate(0, rearOffset);
       if (this.pitch === 'street') {
         // Apartment fronts, a painted brick wall, and chain-link fencing.
         for (let i = 0; i < 10; i++) {
@@ -79,7 +83,12 @@
         c.fillStyle = '#e1ce9c'; c.font = 'bold 10px Arial'; c.fillText('THE LOCAL GROUND', 90, 30);
       }
       c.restore();
-      if (this.pitch === 'street') { c.fillStyle = '#a4a79e'; c.fillRect(53, 84, 17, 600); c.fillRect(930, 84, 17, 600); }
+      if (this.pitch === 'street') {
+        c.save();
+        if (projection) c.transform(...projection.ground);
+        c.fillStyle = '#a4a79e'; c.fillRect(53, 84, 17, 600); c.fillRect(930, 84, 17, 600);
+        c.restore();
+      }
     }
     drawSurface(c) {
       const p = this.palette;

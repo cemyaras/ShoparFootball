@@ -181,7 +181,9 @@
     getPresentation() {
       return { hint: this.phase === 'aiming' ? 'Touch a teammate or open space. Hold for power, release to pass. Lead the run.' : this.phase === 'flight' ? 'Watch the runners and passing lanes.' : '',
         ariaLabel: 'Precision Pass. Touch or click a teammate or open space. Hold to increase pass power, then release to pass to the selected spot. Defenders can intercept.',
-        camera: { bounds: { left: 180, top: 180, width: 650, height: 510 }, maxScale: 1.4 },
+        camera: { bounds: { left: 180, top: 180, width: 650, height: 510 }, maxScale: 1.4,
+          lock: this.phase !== 'flight', followBall: this.phase === 'flight',
+          anchors: this.phase === 'flight' ? [this.target, this.receiver].filter(Boolean) : null },
         help: { steps: [{ title: '1. Choose a target', detail: 'Teammate or space ahead' }, { title: '2. Hold for power', detail: 'Longer passes need more power' }, { title: '3. Release to pass', detail: 'Time the moving receiver' }],
           guide: 'One gesture · Normal and through passes · No automatic reception',
           detail: 'Press on a teammate for a normal pass or pick open space for a through pass. Hold to charge from 0% to 100% in 1.2 seconds and release to pass to that spot. For a through pass, the nearest teammate runs into the selected space. A receiver must physically reach the ball, and a defender can step into a reachable passing lane. Short or overhit passes can miss.' } };
@@ -207,10 +209,12 @@
     drawOverlay(canvas) {
       if (!this.holding || !this.target) return;
       const v = this.context.view, source = this.finger || this.target;
-      const x = clamp(v.x + source.x * v.scale, 78, v.width - 78);
-      const y = clamp(v.y + source.y * v.scale - (this.finger ? 95 : 65), 72, v.height - 42);
+      const project = this.context.geometry.worldToScreen;
+      const anchor = project(source), target = project(this.target);
+      const x = clamp(anchor.x, 78, v.width - 78);
+      const y = clamp(anchor.y - (this.finger ? 95 : 65), 72, v.height - 42);
       canvas.save();
-      if (this.finger) { canvas.strokeStyle = '#e5ffc077'; canvas.setLineDash([3, 4]); canvas.beginPath(); canvas.moveTo(x, y + 30); canvas.lineTo(v.x + this.target.x * v.scale, v.y + this.target.y * v.scale - 12); canvas.stroke(); canvas.setLineDash([]); }
+      if (this.finger) { canvas.strokeStyle = '#e5ffc077'; canvas.setLineDash([3, 4]); canvas.beginPath(); canvas.moveTo(x, y + 30); canvas.lineTo(target.x, target.y - 12); canvas.stroke(); canvas.setLineDash([]); }
       canvas.fillStyle = '#10261bf2'; canvas.fillRect(x - 72, y, 144, 34);
       canvas.strokeStyle = '#bad29888'; canvas.strokeRect(x - 72, y, 144, 34);
       canvas.font = 'bold 11px Arial'; canvas.textAlign = 'center'; canvas.textBaseline = 'top'; canvas.fillStyle = '#e5ffc0';

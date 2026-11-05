@@ -1,3 +1,4 @@
+import { strokeTo } from './stroke.mjs';
 import assert from 'node:assert/strict';
 import { open, size, evaluate, send, wait, errors, close, world, screen } from './browser.mjs';
 
@@ -24,24 +25,12 @@ try {
     await send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 1 });
     await open(url);
     for (const [bend, targetHeight, chip] of [[0,0,false],[20,0,false],[-40,90,false],[25,90,true]]) {
-      const startPoint = await start(chip), targetY = 84 - targetHeight * .52, end = { x: 450, y: targetY };
-      if (touch) {
-        // Invert the existing smooth lift, including strokes shorter than 70 CSS pixels.
-        let low = targetY, high = targetY + 95 / startPoint.scale;
-        for (let i = 0; i < 60; i++) {
-          const y = (low + high) / 2, t = Math.min(1, Math.hypot(end.x - startPoint.x, y - startPoint.y) * startPoint.scale / 70);
-          if (y - 95 * t * t * (3 - 2 * t) / startPoint.scale < targetY) low = y;
-          else high = y;
-        }
-        end.y = (low + high) / 2;
-      }
-      await pointer('down', await world(startPoint.x, startPoint.y), touch);
+      const startPoint = await start(chip), targetY = 84 - targetHeight * .52;
+      const origin = await world(startPoint.x, startPoint.y), target = await world(450, 84, targetHeight);
+      const stroke = strokeTo(origin, target, bend * startPoint.scale, touch, 20), end = stroke.at(-1);
+      await pointer('down', origin, touch);
       await wait(100);
-      for (let i = 1; i <= 20; i++) {
-        const t = i / 20;
-        await pointer('move', await world(startPoint.x + (end.x - startPoint.x) * t + bend * Math.sin(Math.PI * t),
-          startPoint.y + (end.y - startPoint.y) * t), touch);
-      }
+      for (const p of stroke) await pointer('move', p, touch);
       await wait(40);
       const aim = await evaluate(`(()=>{
         const g=footballGame,c=g.controller,p=c.getPresentation(),points=c.effectiveAim.points,path=p.aimingPath;
@@ -49,23 +38,23 @@ try {
         const expectedShot=ShoparFootball.DrawShotController.buildShot(points,c.chip,c.context.physics,c.power);
         return {samePath:JSON.stringify(path)===JSON.stringify(expected),sameShot:JSON.stringify(c.shot)===JSON.stringify(expectedShot),
           start:path[0],end:path.at(-1),cursor:p.aimCursor,spin:c.shot.spin,power:c.power,height:c.shot.targetHeight,
-          liftDistance:c.liftDistance,preview:c.shot.preview.length,scale:g.view.scale};
+          projected:p.projectedAim,liftDistance:c.liftDistance,preview:c.shot.preview.length,scale:g.view.scale};
       })()`);
       check(aim.samePath && aim.sameShot && aim.preview > 2, 'Visual intent and physical shot use the same effective points');
       check(aim.start.x === startPoint.x && aim.start.y === startPoint.y, 'Intent path starts at the ball');
       check(aim.end.x === aim.cursor.x && aim.end.y === aim.cursor.y, 'Crosshair is exactly at the path endpoint');
-      check(Math.abs(aim.end.x - end.x) < .05 && Math.abs(aim.end.y - (84 - targetHeight * .52)) < .05,
+      check(Math.abs(aim.end.x - 450) < .05 && Math.abs(aim.end.y - targetY) < .05,
         `Raw mouse or lifted touch endpoint: ${width}, ${JSON.stringify({end,aim})}`);
       check(Math.abs(aim.height - targetHeight) < .1, 'Goal height comes from effective aim');
-      check(bend ? Math.sign(aim.spin) === -Math.sign(bend) : aim.spin === 0, 'Straight and curved intent preserve spin');
+      check(bend ? Math.sign(aim.spin) === -Math.sign(bend) : aim.spin === 0, `Straight and curved intent preserve spin (${width}, bend ${bend}, height ${targetHeight}, spin ${aim.spin})`);
       const liftProgress = Math.min(aim.liftDistance / 70, 1);
-      check(touch ? Math.abs((aim.cursor.finger.y - aim.cursor.y) * aim.scale - 95 * liftProgress ** 2 * (3 - 2 * liftProgress)) < .05 : aim.cursor.finger === null,
+      check(touch ? Math.abs((aim.projected.finger.y - aim.projected.path.at(-1).y) * aim.scale - 95 * liftProgress ** 2 * (3 - 2 * liftProgress)) < .05 : aim.cursor.finger === null,
         'Only touch receives the smooth lift up to 95 CSS pixels');
       await wait(60);
       check(await evaluate(`footballGame.controller.power===${aim.power}`), 'Drawing locks charged power');
       if (targetHeight && !chip) await screen(`draw-shot-unified-aim-${width}`);
       const shot = await evaluate('cancelAnimationFrame(footballGame.raf);JSON.stringify(footballGame.controller.shot)');
-      await pointer('up', await world(end.x + 20, end.y + 25), touch);
+      await pointer('up', {x:end.x + 20,y:end.y + 25}, touch);
       check(await evaluate(`(()=>{const g=footballGame;return g.state==='BALL_IN_MOTION'&&!g.pointer&&
         JSON.stringify(g.controller.shot)===${JSON.stringify(shot)}&&!g.controllerPresentation().aimingPath&&!g.controllerPresentation().aimCursor})()`),
       'Release commits the last visible shot without resampling');

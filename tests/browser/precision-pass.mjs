@@ -1,3 +1,4 @@
+import { screen as projectedScreen } from './stroke.mjs';
 // Optional Playwright flow; PLAYWRIGHT_MODULE may point to an external playwright/index.mjs.
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile} from 'node:fs/promises';
@@ -15,7 +16,10 @@ async function read(page){return page.evaluate(()=>{
     ball:g.ball,mates:g.mates,defenders:g.defenders,elapsed:c.elapsed,pointer:g.pointer,captured:g.pointer&&g.canvas.hasPointerCapture(g.pointer.id),
     view:g.view,rect:{left:r.left,top:r.top}}));
 });}
-const screen=(s,p)=>({x:Math.round(s.rect.left+s.view.x+p.x*s.view.scale),y:Math.round(s.rect.top+s.view.y+p.y*s.view.scale)});
+function screen(s,p) {
+  const target=projectedScreen(s,p);
+  return {x:Math.round(target.x),y:Math.round(target.y)};
+}
 async function observe(page){await page.evaluate(()=>{
   window.precisionEvents=[];
   for(const type of ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchend','click','dblclick','contextmenu','selectstart'])document.addEventListener(type,e=>precisionEvents.push({type,x:e.clientX,y:e.clientY,trusted:e.isTrusted,pointerType:e.pointerType,prevented:e.defaultPrevented}));
