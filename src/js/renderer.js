@@ -3,6 +3,9 @@
   'use strict';
   const Core = window.ShoparFootball.Core;
   const { State, HEIGHT_PROJECTION, BACKDROP_SHIFT, STADIUM_OFFSET, GOAL, FIELD, clamp, lerp } = Core;
+  // The angled camera draws actors and the ball 12% smaller than their gameplay scale so the pitch reads larger.
+  // Positions, collision radii and the foot-level ball offset keep their gameplay values.
+  const ACTOR_DRAW = .88;
   class CanvasRenderer {
     constructor(scene, drawing = null) { this.scene = scene; this.drawing = drawing || this; }
     initCrowd() {
@@ -255,8 +258,9 @@
       // Yan panolar
       c.save();
       if (projection) c.transform(...projection.ground);
-      c.fillStyle = '#263238'; c.fillRect(52, 84, 20, 600); c.fillRect(928, 84, 20, 600);
-      for (let y = 90; y < 680; y += 60) {
+      const boardEnd = projection ? 1284 : 684;
+      c.fillStyle = '#263238'; c.fillRect(52, 84, 20, boardEnd - 84); c.fillRect(928, 84, 20, boardEnd - 84);
+      for (let y = 90; y < boardEnd - 4; y += 60) {
         c.fillStyle = ((y / 60) % 2) ? '#e53935' : '#fdd835'; c.fillRect(54, y, 16, 24);
         c.fillStyle = ((y / 60) % 2) ? '#1e88e5' : '#43a047'; c.fillRect(930, y, 16, 24);
       }
@@ -275,21 +279,32 @@
         if (env.pitch === 'stadium') this.drawing.drawStadium(c);
         else env.drawSurroundings(c, BACKDROP_SHIFT);
       }
-      env.drawSurface(c);
+      env.drawSurface(c, projection ? 2 : 1);
 
       // --- Saha Çizgileri (Parlak Tebeşir) ---
-      c.strokeStyle = env.palette.line; c.lineWidth = 2.5; c.strokeRect(76, 84, 848, 600);
-      // Markings are visual only (about 13% larger), centred on the goal axis at x = 500.
-      c.strokeRect(252, 84, 496, 204); // Ceza sahası
-      c.strokeRect(370, 84, 260, 80);  // Altıpas
-      c.beginPath(); c.arc(500, 227, 99, .65, Math.PI - .65); c.stroke(); // Ceza yayı
-      c.beginPath(); c.arc(500, 227, 3.5, 0, Math.PI * 2); c.fillStyle = env.palette.line; c.fill(); // Penaltı noktası
-      c.beginPath(); c.moveTo(76, 619); c.lineTo(924, 619); c.stroke(); // Orta saha çizgisi
-      // The larger centre circle is kept inside the touchlines.
-      c.save(); c.beginPath(); c.rect(76, 84, 848, 600); c.clip();
-      c.beginPath(); c.arc(500, 619, 108, 0, Math.PI * 2); c.stroke(); // Orta saha dairesi
-      c.restore();
-      c.beginPath(); c.arc(500, 619, 3.5, 0, Math.PI * 2); c.fill();
+      // Visual-only markings at real proportions for the 848-unit pitch width (about 12.5 units per metre).
+      // Gameplay uses the near half (FIELD); the angled camera also draws the far half so the pitch continues.
+      const far = projection ? 1284 : 684;
+      c.strokeStyle = env.palette.line; c.lineWidth = 2.5; c.strokeRect(76, 84, 848, far - 84);
+      c.fillStyle = env.palette.line;
+      for (const [goalLine, side] of projection ? [[84, 1], [far, -1]] : [[84, 1]]) {
+        const box = (width, depth) => c.strokeRect(500 - width / 2, side > 0 ? goalLine : goalLine - depth, width, depth);
+        box(502, 206); // Ceza sahası: 40.3 m x 16.5 m
+        box(228, 69);  // Altıpas: 18.3 m x 5.5 m
+        const spot = goalLine + side * 137; // 11 m
+        c.beginPath(); c.arc(500, spot, 114, side > 0 ? .65 : Math.PI + .65, side > 0 ? Math.PI - .65 : -.65); c.stroke(); // Ceza yayı: 9.15 m
+        c.beginPath(); c.arc(500, spot, 3.5, 0, Math.PI * 2); c.fill(); // Penaltı noktası
+      }
+      if (projection) {
+        c.beginPath(); c.moveTo(76, 684); c.lineTo(924, 684); c.stroke(); // Orta saha çizgisi
+        c.beginPath(); c.arc(500, 684, 114, 0, Math.PI * 2); c.stroke(); // Orta saha dairesi
+        c.beginPath(); c.arc(500, 684, 3.5, 0, Math.PI * 2); c.fill();
+        for (const x of [76, 924]) { c.beginPath(); c.arc(x, far, 15, x === 76 ? -Math.PI / 2 : Math.PI, x === 76 ? 0 : Math.PI * 1.5); c.stroke(); }
+      } else {
+        // The flat view ends at the halfway line and shows the upper half of the centre circle.
+        c.beginPath(); c.arc(500, 684, 114, Math.PI, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(500, 684, 3.5, Math.PI, Math.PI * 2); c.fill();
+      }
       for (const x of [76, 924]) { c.beginPath(); c.arc(x, 84, 15, x === 76 ? 0 : Math.PI / 2, x === 76 ? Math.PI / 2 : Math.PI); c.stroke(); }
 
       // Köşe bayrakları (rüzgarda hafif sallanan üçgen bayrak)
@@ -443,19 +458,21 @@
 
       c.save();
       const projection = this.scene.view.projection, scale = this.scene.geometry.playerScale(p);
+      const drawScale = projection ? scale * ACTOR_DRAW : scale, reach = scale / drawScale;
       // Every actor shares the block style; the flat fallback only draws without a projection.
       const threeQuarter = !!projection, front = pose.facing === 'toward';
       if (projection) {
         c.save(); c.transform(...projection.ground);
         c.fillStyle = 'rgba(10,32,18,0.45)';
-        c.beginPath(); c.ellipse(p.x, p.y + 10 * scale, 11 * scale, 8 * scale, 0, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.ellipse(p.x, p.y + 10 * scale, 11 * drawScale, 8 * drawScale, 0, 0, Math.PI * 2); c.fill();
         c.restore();
         // Explicit keeper hands use the same vertical plane as glove contact.
+        // Boots stay on the gameplay foot point while the sprite itself is drawn smaller.
         const footOffset = pose.keeperHands ? 0 : 10 * scale;
         c.transform(...projection.upright(p.x, p.y + footOffset));
-        c.translate(0, hop - footOffset);
+        c.translate(0, hop - (pose.keeperHands ? 0 : 10 * drawScale));
       } else c.translate(p.x, p.y + hop);
-      c.scale(scale, scale);
+      c.scale(drawScale, drawScale);
       if (pose.tackling || pose.stumbling) c.rotate(pose.lean);
 
       // 1. Zemin Gölgelendirmesi
@@ -540,8 +557,10 @@
           block(-10, -25, 3, 3, 2, handColor, '#d58b5b', handColor);
         } else if (pose.keeperHands) {
           for (const hand of pose.keeperHands) {
-            c.strokeStyle = shirtMain; c.lineWidth = 4; c.beginPath(); c.moveTo(0, -12); c.lineTo(hand.x, hand.y); c.stroke();
-            glove(hand.x - 2.5, hand.y - 2.5);
+            // Gloves stay on the physical contact centres; only the arm reaches a little farther.
+            const hx = hand.x * reach, hy = hand.y * reach;
+            c.strokeStyle = shirtMain; c.lineWidth = 4; c.beginPath(); c.moveTo(0, -12); c.lineTo(hx, hy); c.stroke();
+            glove(hx - 2.5, hy - 2.5);
           }
         } else if (pose.diving) {
           block(-12, -18, 4, 10, 3, shirtMain, shirtDark, top); glove(-13, -22);
@@ -666,7 +685,7 @@
     drawBallShadow(c, b) {
       if (this.scene.resolution?.kind === 'save' || this.scene.presentation().ballHeld) return;
       const geometry = this.scene.geometry.ballGeometry(b);
-      const baseR = geometry.groundRadius, height = geometry.height;
+      const baseR = geometry.groundRadius * (this.scene.view.projection ? ACTOR_DRAW : 1), height = geometry.height;
       const projection = this.scene.view.projection;
       c.save();
 
@@ -695,7 +714,7 @@
       return projection ? projection.project(ball) : { x: ball.x, y: ball.y - height };
     }
     drawBall(c, b) {
-      const geometry = this.scene.geometry.ballGeometry(b), visualR = geometry.radius;
+      const geometry = this.scene.geometry.ballGeometry(b), visualR = geometry.radius * (this.scene.view.projection ? ACTOR_DRAW : 1);
       const point = this.ballRenderPoint(b, geometry.height);
       c.save();
       if ([State.BALL_IN_MOTION, State.INTERCEPTION].includes(this.scene.state)) {
@@ -736,7 +755,7 @@
         const a = this.scene.trail[i - 1], b = this.scene.trail[i], alpha = (i / this.scene.trail.length) * .4 * Math.max(0, 1 - b.age / 1.4);
         c.strokeStyle = `rgba(255,255,235,${alpha * 1.8})`;
         // A trail must not be wider than the small on-field ball it follows.
-        c.lineWidth = this.scene.geometry.ballGeometry(b).groundRadius * (.18 + i / this.scene.trail.length * .55);
+        c.lineWidth = this.scene.geometry.ballGeometry(b).groundRadius * (this.scene.view.projection ? ACTOR_DRAW : 1) * (.18 + i / this.scene.trail.length * .55);
         const from = this.ballRenderPoint(a), to = this.ballRenderPoint(b);
         c.beginPath(); c.moveTo(from.x, from.y); c.lineTo(to.x, to.y); c.stroke();
       } c.restore();

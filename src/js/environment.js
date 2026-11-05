@@ -56,9 +56,11 @@
         // Apartment fronts, a painted brick wall, and chain-link fencing.
         for (let i = projection ? -4 : 0; i < (projection ? 14 : 10); i++) {
           const x = 36 + i * 96;
-          c.fillStyle = ['#58636b', '#746b62', '#4c5962'][i % 3]; c.fillRect(x, -100, 90, 100);
+          // Lower facades under the angled camera keep the backdrop from dominating the view.
+          const facade = projection ? 64 : 100, rows = projection ? 2 : 3;
+          c.fillStyle = ['#58636b', '#746b62', '#4c5962'][i % 3]; c.fillRect(x, -facade, 90, facade);
           c.fillStyle = '#c1af7d';
-          for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) c.fillRect(x + 10 + col * 25, -90 + row * 28, 9, 14);
+          for (let row = 0; row < rows; row++) for (let col = 0; col < 3; col++) c.fillRect(x + 10 + col * 25, 10 - facade + row * 28, 9, 14);
         }
         c.fillStyle = '#71594e'; c.fillRect(48, -2, 904, 78);
         c.strokeStyle = '#8d7160'; c.lineWidth = 1;
@@ -95,37 +97,43 @@
       if (this.pitch === 'street') {
         c.save();
         if (projection) c.transform(...projection.ground);
-        c.fillStyle = '#a4a79e'; c.fillRect(53, 84, 17, 600); c.fillRect(930, 84, 17, 600);
+        const railLength = projection ? 1200 : 600;
+        c.fillStyle = '#a4a79e'; c.fillRect(53, 84, 17, railLength); c.fillRect(930, 84, 17, railLength);
         c.restore();
       }
     }
-    drawSurface(c) {
+    drawSurface(c, halves = 1) {
+      // The angled camera passes two halves: the gameplay half and the far half beyond the halfway line.
       const p = this.palette;
-      for (let i = 0; i < 10; i++) { c.fillStyle = i % 2 ? p.stripe : p.ground; c.fillRect(76, 84 + i * 60, 848, 60); }
-      c.save(); c.beginPath(); c.rect(76, 84, 848, 600); c.clip();
-      if (this.pitch === 'street') {
-        c.strokeStyle = '#424b50'; c.lineWidth = 2;
-        for (let i = 0; i < 16; i++) {
-          const x = 90 + (i * 173) % 810, y = 95 + (i * 127) % 570;
-          c.beginPath(); c.moveTo(x, y); c.lineTo(x + 12, y + 17); c.lineTo(x + 7, y + 31); c.lineTo(x + 24, y + 46); c.stroke();
+      for (let i = 0; i < 10 * halves; i++) { c.fillStyle = i % 2 ? p.stripe : p.ground; c.fillRect(76, 84 + i * 60, 848, 60); }
+      c.save(); c.beginPath(); c.rect(76, 84, 848, 600 * halves); c.clip();
+      for (let half = 0; half < halves; half++) {
+        c.save(); c.translate(0, 600 * half);
+        if (this.pitch === 'street') {
+          c.strokeStyle = '#424b50'; c.lineWidth = 2;
+          for (let i = 0; i < 16; i++) {
+            const x = 90 + (i * 173) % 810, y = 95 + (i * 127) % 570;
+            c.beginPath(); c.moveTo(x, y); c.lineTo(x + 12, y + 17); c.lineTo(x + 7, y + 31); c.lineTo(x + 24, y + 46); c.stroke();
+          }
+          c.fillStyle = '#434d53'; c.fillRect(96, 453, 148, 51); c.fillRect(766, 317, 117, 74);
+        } else if (this.pitch === 'dirt') {
+          for (let i = 0; i < 35; i++) {
+            c.fillStyle = i % 2 ? 'rgba(126,83,48,.16)' : 'rgba(232,191,126,.2)';
+            c.beginPath(); c.ellipse(88 + (i * 173) % 830, 95 + (i * 131) % 580, 16 + i % 5 * 11, 7 + i % 3 * 5, i, 0, Math.PI * 2); c.fill();
+          }
+          c.strokeStyle = 'rgba(102,68,38,.18)'; c.lineWidth = 3;
+          for (let i = 0; i < 20; i++) { const x = 100 + (i * 137) % 800, y = 110 + (i * 97) % 550; c.beginPath(); c.arc(x, y, 15, .2, 1.7); c.stroke(); }
         }
-        c.fillStyle = '#434d53'; c.fillRect(96, 453, 148, 51); c.fillRect(766, 317, 117, 74);
-      } else if (this.pitch === 'dirt') {
-        for (let i = 0; i < 35; i++) {
-          c.fillStyle = i % 2 ? 'rgba(126,83,48,.16)' : 'rgba(232,191,126,.2)';
-          c.beginPath(); c.ellipse(88 + (i * 173) % 830, 95 + (i * 131) % 580, 16 + i % 5 * 11, 7 + i % 3 * 5, i, 0, Math.PI * 2); c.fill();
+        c.fillStyle = this.pitch === 'dirt' ? 'rgba(68,48,28,.18)' : 'rgba(255,255,255,.045)';
+        for (let i = 0; i < 240; i++) c.fillRect(83 + (i * 137) % 830, 90 + (i * 97) % 585, 2, this.pitch === 'stadium' ? 4 : 2);
+        if (this.weather === 'rain') {
+          c.fillStyle = this.pitch === 'dirt' ? 'rgba(80,65,44,.25)' : 'rgba(166,198,215,.18)';
+          for (let i = 0; i < 14; i++) { c.beginPath(); c.ellipse(100 + (i * 193) % 790, 115 + (i * 137) % 540, 14 + i % 3 * 12, 3 + i % 4, -.12, 0, Math.PI * 2); c.fill(); }
+        } else if (this.weather === 'snow') {
+          c.fillStyle = 'rgba(237,245,246,.28)';
+          for (let i = 0; i < 42; i++) { c.beginPath(); c.ellipse(85 + (i * 193) % 830, 95 + (i * 137) % 580, 10 + i % 4 * 9, 3 + i % 3 * 3, -.2, 0, Math.PI * 2); c.fill(); }
         }
-        c.strokeStyle = 'rgba(102,68,38,.18)'; c.lineWidth = 3;
-        for (let i = 0; i < 20; i++) { const x = 100 + (i * 137) % 800, y = 110 + (i * 97) % 550; c.beginPath(); c.arc(x, y, 15, .2, 1.7); c.stroke(); }
-      }
-      c.fillStyle = this.pitch === 'dirt' ? 'rgba(68,48,28,.18)' : 'rgba(255,255,255,.045)';
-      for (let i = 0; i < 240; i++) c.fillRect(83 + (i * 137) % 830, 90 + (i * 97) % 585, 2, this.pitch === 'stadium' ? 4 : 2);
-      if (this.weather === 'rain') {
-        c.fillStyle = this.pitch === 'dirt' ? 'rgba(80,65,44,.25)' : 'rgba(166,198,215,.18)';
-        for (let i = 0; i < 14; i++) { c.beginPath(); c.ellipse(100 + (i * 193) % 790, 115 + (i * 137) % 540, 14 + i % 3 * 12, 3 + i % 4, -.12, 0, Math.PI * 2); c.fill(); }
-      } else if (this.weather === 'snow') {
-        c.fillStyle = 'rgba(237,245,246,.28)';
-        for (let i = 0; i < 42; i++) { c.beginPath(); c.ellipse(85 + (i * 193) % 830, 95 + (i * 137) % 580, 10 + i % 4 * 9, 3 + i % 3 * 3, -.2, 0, Math.PI * 2); c.fill(); }
+        c.restore();
       }
       c.restore();
     }

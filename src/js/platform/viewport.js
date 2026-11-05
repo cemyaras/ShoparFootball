@@ -73,22 +73,43 @@
       points.push(game.ball, ...(camera?.anchors || []));
       const preferred = { ...bounds, top: Math.max(bounds.top, FIELD.top),
         height: bounds.top + bounds.height - Math.max(bounds.top, FIELD.top) };
-      const frame = (projection, cap) => {
-        const fitted = fitProjection(projection, preferred, points, rect.width, usableHeight, Math.min(maxScale, cap));
+      const frame = (projection, cap, pts = points) => {
+        const fitted = fitProjection(projection, preferred, pts, rect.width, usableHeight, Math.min(maxScale, cap));
         const minimumScale = .95 * Math.min(maxScale, cap, rect.width / bounds.width, usableHeight / bounds.height);
         // Let optional runoff crop before shrinking actors below the old framing scale.
         return fitted.scale < minimumScale ? Object.assign(fitted, fitProjection(projection,
-          { left: game.ball.x, top: game.ball.y, width: 0, height: 0 }, points, rect.width, usableHeight, minimumScale)) : fitted;
+          { left: game.ball.x, top: game.ball.y, width: 0, height: 0 }, pts, rect.width, usableHeight, minimumScale)) : fitted;
       };
       // Players keep the Phase 13 on-screen size; the new angle never enlarges them noticeably.
       const target = frame(REFERENCE, Infinity).scale;
-      const next = frame(this.projection, target * 1.05);
+      // The ball's hint ring (about 38 screen units) must stay on screen beside the player.
+      const ring = [-44, 44].map(dx => ({ x: game.ball.x + dx, y: game.ball.y }));
+      const next = frame(this.projection, target * 1.05, [...points, ...ring]);
+      let content = [...points, ...ring];
       if (next.scale < target * .9) {
         // Prefer clear action over the full scene: keep only what the play needs visible.
-        const required = [game.ball, ...(camera?.anchors || []), points[0]];
-        if (bounds.top <= FIELD.top) required.push(...Core.goalCorners().slice(0, 4));
+        content = [game.ball, ...ring, ...(camera?.anchors || []), points[0]];
+        if (bounds.top <= FIELD.top) content.push(...Core.goalCorners().slice(0, 4));
         Object.assign(next, fitProjection(this.projection, { left: game.ball.x, top: game.ball.y, width: 0, height: 0 },
-          required, rect.width, usableHeight, target * .9));
+          content, rect.width, usableHeight, target * .9));
+      }
+      // Centre the gameplay content vertically; optional camera-bounds runoff does not pull the action off centre.
+      const ys = content.map(point => this.projection.project(point).y);
+      const contentTop = Math.min(...ys), contentBottom = Math.max(...ys);
+      const presentation = game.controllerPresentation();
+      // A pull-back gesture is part of the play: count its reach below the ball as content.
+      const reach = presentation.camera?.dragRoom && !presentation.drawToShoot
+        ? this.projection.project(game.ball).y + (clamp(Math.min(rect.width, rect.height) * .25, 68, 110) + 16) / next.scale : -Infinity;
+      next.y = (usableHeight - (contentTop + Math.max(contentBottom, reach)) * next.scale) / 2;
+      // The real content (goal and heads) always starts below the HUD.
+      next.y = Math.max(next.y, -contentTop * next.scale);
+      if (presentation.drawToShoot) {
+        // Drawn touch aim lifts the cursor up to 165 px above the ball (70 px drag plus 95 px lift),
+        // and the cursor stops 80 px (60 px on short screens) from the top of the canvas.
+        const aimTop = (rect.height < 500 ? 60 : 80) + 165 - hudTop;
+        next.y = Math.max(next.y, aimTop - this.projection.project(game.ball).y * next.scale);
+        // Never push the lowest content point off the bottom of the canvas while making that room.
+        next.y = Math.min(next.y, rect.height - hudTop - 12 - contentBottom * next.scale);
       }
       this.makeDragRoom(next, game, points, rect, hudTop, usableHeight);
       next.height = rect.height;

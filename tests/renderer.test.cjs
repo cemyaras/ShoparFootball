@@ -192,3 +192,17 @@ test('a ball beyond the right post is drawn after the near net while one inside 
     assert.equal(order.indexOf('ball') < order.indexOf('near-net'), before);
   }
 });
+
+test('smaller angled-camera sprites keep keeper gloves on their physical contact centres', () => {
+  const h = headless({}, 30), hands = [{ x: -12, y: -16 }, { x: 12, y: -16 }];
+  const renderer = new h.CanvasRenderer({ ...h.scene, actorPose: () => ({ keeperHands: hands, hop: 0 }) });
+  renderer.drawPlayer(h.scene.ctx, h.world.keeper);
+  const [, sx] = h.log.find(call => call[0] === 'scale');
+  assert.ok(sx < 1.1, 'the keeper sprite is drawn smaller than its gameplay scale');
+  for (const hand of hands) {
+    // Local glove corner times the drawn scale must equal the gameplay glove offset (hand x keeper scale).
+    const glove = h.log.find(call => call[0] === 'fillRect' && Math.abs((call[1] + 2.5) * sx - hand.x * 1.1) < 1e-9
+      && Math.abs((call[2] + 2.5) * sx - hand.y * 1.1) < 1e-9);
+    assert.ok(glove, 'glove drawn at ' + JSON.stringify(hand));
+  }
+});
